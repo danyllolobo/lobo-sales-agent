@@ -173,6 +173,118 @@ class Segment(StrEnum):
 
 
 PlanTier = Literal["starter", "pro", "enterprise"]
+FollowUpStrategy = Literal["warm_check", "value_reinforce", "objection_break", "breakup"]
+
+PLAN_SPECS: dict[str, dict[str, Any]] = {
+    "starter": {
+        "code": "starter",
+        "name": "Plano Essencial",
+        "subtitle": "Para consultórios e pequenas lojas",
+        "price_brl": 790,
+        "setup_brl": 2500,
+        "max_whatsapp_numbers": 1,
+        "monthly_turn_limit": 800,
+        "max_catalog_items": 15,
+        "followup_allowed": False,
+        "max_followup_steps": 0,
+        "crm_allowed": False,
+        "external_api_allowed": False,
+        "features": [
+            "1 número de WhatsApp",
+            "Até 800 conversas/mês",
+            "Compreensão de áudios",
+            "Catálogo de até 15 itens",
+            "Horário noturno e fins de semana",
+        ],
+    },
+    "pro": {
+        "code": "pro",
+        "name": "Plano Pro Vendas",
+        "subtitle": "Para varejo, clínicas, colchões e piscinas",
+        "price_brl": 1690,
+        "setup_brl": 4500,
+        "max_whatsapp_numbers": 2,
+        "monthly_turn_limit": 2500,
+        "max_catalog_items": None,
+        "followup_allowed": True,
+        "max_followup_steps": 4,
+        "crm_allowed": True,
+        "external_api_allowed": True,
+        "features": [
+            "1 a 2 números de WhatsApp",
+            "Até 2.500 conversas/mês",
+            "Compreensão nativa de áudios",
+            "Catálogo completo ilimitado",
+            "Inteligência de frete por bairro",
+            "Régua de follow-up progressiva (até 4 etapas)",
+            "Integração CRM (Chatwoot / GoHighLevel)",
+        ],
+    },
+    "enterprise": {
+        "code": "enterprise",
+        "name": "Escala Enterprise",
+        "subtitle": "Para franquias e redes com filiais",
+        "price_brl": 2990,
+        "setup_brl": None,
+        "max_whatsapp_numbers": 4,
+        "monthly_turn_limit": 6000,
+        "max_catalog_items": None,
+        "followup_allowed": True,
+        "max_followup_steps": 6,
+        "crm_allowed": True,
+        "external_api_allowed": True,
+        "features": [
+            "Até 4 números / departamentos",
+            "Até 6.000 conversas/mês",
+            "Catálogo completo ilimitado",
+            "Integração com ERP / Estoque / API Externa",
+            "Régua de follow-up completa (até 6 etapas)",
+            "Modelos de Raciocínio Avançado (Gemini Pro / GPT-4o)",
+        ],
+    },
+}
+
+
+class FollowUpStep(BaseModel):
+    """Etapa individual da régua progressiva de follow-up comercial."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    step: int = Field(default=1, ge=1, le=6)
+    delay_minutes: int = Field(default=120, ge=1, le=43200)  # de 1 min (teste) até 30 dias (43.200 min)
+    label: str = "Retomada"
+    strategy: FollowUpStrategy = "warm_check"
+    custom_message: str | None = None
+
+
+def default_followup_steps() -> list[FollowUpStep]:
+    """Cadência comercial progressiva padrão: 2h -> +1 dia -> +3 dias -> +7 dias."""
+    return [
+        FollowUpStep(
+            step=1,
+            delay_minutes=120,
+            label="1º Toque — Mesmo Dia (Retomada Quente)",
+            strategy="warm_check",
+        ),
+        FollowUpStep(
+            step=2,
+            delay_minutes=1440,
+            label="2º Toque — Dia Seguinte (+1 dia)",
+            strategy="value_reinforce",
+        ),
+        FollowUpStep(
+            step=3,
+            delay_minutes=4320,
+            label="3º Toque — Reativação Consultiva (+3 dias)",
+            strategy="objection_break",
+        ),
+        FollowUpStep(
+            step=4,
+            delay_minutes=10080,
+            label="4º Toque — Despedida Sem Pressão (+7 dias)",
+            strategy="breakup",
+        ),
+    ]
 
 
 class CRMProvider(StrEnum):
@@ -788,10 +900,15 @@ class TenantConfig(BaseModel):
     plan_tier: PlanTier = "pro"
     monthly_turn_limit: int | None = Field(default=None, ge=100, le=1_000_000)
 
-    # Configuração de Follow-up Automático para leads inativos (em qualificação)
+    # Configuração da Régua Progressiva de Follow-up para leads inativos
     followup_enabled: bool = False
-    followup_delay_minutes: int = Field(default=120, ge=15, le=10080)
-    followup_max_attempts: int = Field(default=1, ge=1, le=5)
+    followup_delay_minutes: int = Field(default=120, ge=1, le=43200)
+    followup_max_attempts: int = Field(default=4, ge=1, le=10)
+    followup_steps: list[FollowUpStep] = Field(default_factory=default_followup_steps)
+
+    # Conexão opcional com API Externa / ERP / Webhook de saída (Bling, Asaas, n8n, Make)
+    external_webhook_url: str | None = None
+    external_api_token: str | None = None
 
     # Sobrescrevem os padrões globais de `Settings` quando definidos
     debounce_silence_seconds: float | None = Field(default=None, ge=1.0, le=30.0)
@@ -812,6 +929,9 @@ class TenantConfig(BaseModel):
         s, m = self.debounce_silence_seconds, self.debounce_max_window_seconds
         if s is not None and m is not None and s >= m:
             raise ValueError("debounce_silence_seconds deve ser menor que debounce_max_window_seconds")
+        if self.monthly_turn_limit is None:
+            spec = PLAN_SPECS.get(self.plan_tier) or PLAN_SPECS["pro"]
+            self.monthly_turn_limit = int(spec["monthly_turn_limit"])
         return self
 
     @property

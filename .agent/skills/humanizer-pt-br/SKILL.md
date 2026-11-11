@@ -43,3 +43,4 @@ Jamais utilize os padrões abaixo em mensagens de WhatsApp:
    - Quando mostrar 2 modelos, use card limpo (`✅ *Modelo*`, 1 linha direta do benefício real, `💰 *Valor*`).
 4. **Alta Densidade de Informação (Zero Enrolação):**
    - Cada frase precisa trazer um fato concreto (medida, densidade/molas, valor em R$, parcela, frete grátis no bairro ou endereço na Tavares Bastos). Se uma frase não informa nada novo, corte-a.
+

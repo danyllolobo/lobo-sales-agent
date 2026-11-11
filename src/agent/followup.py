@@ -1,14 +1,18 @@
-"""Motor de Follow-up Automático e Humanizado para leads inativos no WhatsApp.
+"""Motor de Régua de Follow-up Progressiva e Humanizada para leads inativos no WhatsApp.
 
-Regras de Elegibilidade e Segurança:
-1. Só avalia tenants ativos com `followup_enabled=True` (ou quando solicitado via `force=True` / `dry_run=True`).
-2. Só envia follow-up para leads em estágio `in_progress` ou `qualified` cuja última mensagem na conversa
-   tenha sido enviada pela IA (`last_role == "ai"`), ou seja, o cliente parou de responder.
-3. NUNCA envia follow-up se a IA estiver pausada (`lead.ai_paused` ou `pause_registry.is_paused`),
-   nem se o lead já estiver em `visit_scheduled`, `human_handoff`, `won` ou `lost`.
-4. Respeita o limite `followup_max_attempts` (padrão: 1 tentativa) e a janela `followup_delay_minutes`.
-5. Registra a mensagem no `pause_registry.register_bot_outbound` antes do disparo para que o eco `from_me`
-   do WhatsApp não pause a IA acidentalmente.
+Como funciona a Cadência Progressiva Real (não usa tempo fixo repetido):
+- Etapa 1 (`warm_check` — ex.: 2h ou 30min após silêncio): Retomada leve sobre a dúvida/produto consultado.
+- Etapa 2 (`value_reinforce` — ex.: +1 dia / 24h após o 1º toque): Reforço de diferencial (parcelamento sem juros,
+  frete grátis, reembolso ou horário na agenda da semana).
+- Etapa 3 (`objection_break` — ex.: +3 dias / 72h após o 2º toque): Pergunta consultiva curta para destravar
+  objeção ou saber se o cliente ainda busca a solução.
+- Etapa 4 (`breakup` — ex.: +7 dias após o 3º toque): Encerramento elegante sem pressão ("vou encerrar seu
+  atendimento por aqui para não incomodar, mas continuo à disposição").
+
+Regras de Segurança:
+1. Só avalia tenants ativos com `followup_enabled=True` e cujo plano permita follow-up (ou quando `force=True`).
+2. Só envia para leads em `in_progress` ou `qualified` cuja última mensagem tenha sido da IA (`last_role in ("ia", "ai")`).
+3. NUNCA envia se a IA estiver pausada (`lead.ai_paused` ou `pause_registry.is_paused`), nem em `visit_scheduled` / `human_handoff`.
 """
 
 from __future__ import annotations
@@ -22,10 +26,14 @@ from langchain_core.messages import AIMessage
 
 from src.agent.graph import LeadConversationStore
 from src.core.schemas import (
+    PLAN_SPECS,
+    FollowUpStep,
     LeadProfile,
     LeadStatus,
     OutgoingMessage,
     Segment,
+    TenantConfig,
+    default_followup_steps,
     mask_phone,
     utcnow,
 )
@@ -36,33 +44,111 @@ from src.tools.tenant_data import TenantDataStore
 logger = logging.getLogger("lobo.agent.followup")
 
 
-def build_followup_message(
-    lead: LeadProfile,
-    display_name: str,
-    segment: Segment,
-) -> str:
-    """Gera uma mensagem curta, leve e 100% humana (padrão humanizer-pt-br + clearmode) de retomada."""
-    parts = (lead.name or "").strip().split()
+def _extract_first_name(raw_name: str | None) -> str:
+    parts = (raw_name or "").strip().split()
     if not parts:
-        first_name = ""
-    elif parts[0].lower().rstrip(".") in ("dr", "dra", "sr", "sra", "prof", "profa") and len(parts) > 1:
+        return ""
+    if parts[0].lower().rstrip(".") in ("dr", "dra", "sr", "sra", "prof", "profa") and len(parts) > 1:
         first_name = f"{parts[0]} {parts[1]}"
     else:
         first_name = parts[0]
     if first_name.lower() in ("lead", "cliente", "não", "nao"):
-        first_name = ""
+        return ""
+    return first_name
+
+
+def resolve_effective_steps(t_cfg: TenantConfig) -> list[FollowUpStep]:
+    """Retorna a lista de etapas progressivas do tenant, respeitando o teto do plano e overrides."""
+    steps = list(t_cfg.followup_steps) if t_cfg.followup_steps else default_followup_steps()
+    if not steps:
+        steps = default_followup_steps()
+    # Compatibilidade: se o usuário/teste alterou `followup_delay_minutes` do padrão 120 e manteve o step 1 em 120
+    if t_cfg.followup_delay_minutes != 120 and steps[0].delay_minutes == 120:
+        steps[0] = steps[0].model_copy(update={"delay_minutes": t_cfg.followup_delay_minutes})
+
+    plan_spec = PLAN_SPECS.get(t_cfg.plan_tier) or PLAN_SPECS["pro"]
+    max_plan_steps = int(plan_spec.get("max_followup_steps") or 4)
+    limit = min(len(steps), max(1, t_cfg.followup_max_attempts), max(1, max_plan_steps))
+    return steps[:limit]
+
+
+def build_followup_message(
+    lead: LeadProfile,
+    display_name: str,
+    segment: Segment,
+    *,
+    step: FollowUpStep | None = None,
+) -> str:
+    """Gera a mensagem da etapa atual da régua (1º toque, +1 dia, +3 dias ou +7 dias break-up)."""
+    first_name = _extract_first_name(lead.name)
     greeting = f"Oi, {first_name}! Tudo bem?" if first_name else "Oi! Tudo bem por aí?"
+    strategy = step.strategy if step is not None else "warm_check"
+
+    if step is not None and step.custom_message and step.custom_message.strip():
+        msg = step.custom_message.strip()
+        msg = msg.replace("{nome}", first_name or "tudo bem").replace("{empresa}", display_name)
+        return msg
 
     size = lead.attributes.get("tamanho")
     specialty = lead.attributes.get("especialidade")
     city = lead.attributes.get("bairro") or lead.attributes.get("cidade")
 
+    # Etapa 4 — Break-up / Encerramento elegante (+7 dias)
+    if strategy == "breakup":
+        return (
+            f"Oi{f', {first_name}' if first_name else ''}! Tudo joia? 😊 "
+            f"Como não conseguimos continuar por aqui, vou encerrar seu atendimento na *{display_name}* "
+            "para não te incomodar com mensagens. Quando quiser retomar, é só me mandar um oi que te atendo na hora!"
+        )
+
+    # Etapa 3 — Quebra de objeção / Reativação (+3 dias)
+    if strategy == "objection_break":
+        if segment is Segment.MATTRESS:
+            item_ref = f"o colchão *{size.capitalize()}*" if size else "o colchão novo"
+            return (
+                f"Oi{f', {first_name}' if first_name else ''}, tudo bom? Sei que a semana é corrida! "
+                f"Você ainda está pesquisando {item_ref} aqui na *{display_name}* ou decidiu deixar mais para frente?"
+            )
+        if segment is Segment.PSYCHOLOGY:
+            return (
+                f"Oi{f', {first_name}' if first_name else ''}! Passando com carinho aqui da *{display_name}* "
+                "para saber se você ainda gostaria de ver um horário para este mês ou se prefere que eu te chame mais adiante."
+            )
+        return (
+            f"Oi{f', {first_name}' if first_name else ''}, tudo joia? Sei que a rotina é corrida! "
+            f"Você ainda tem interesse em avançar com a *{display_name}* agora ou prefere deixar para o próximo mês?"
+        )
+
+    # Etapa 2 — Reforço de Valor / Condição (+1 dia)
+    if strategy == "value_reinforce":
+        if segment is Segment.MATTRESS:
+            return (
+                f"{greeting} 😊 Passando para avisar que ainda consigo manter a condição em até *10x sem juros* "
+                f"(ou desconto à vista no PIX) e *entrega grátis* aqui na *{display_name}*. "
+                "Prefere garantir pelo WhatsApp ou dar uma passada rápida na loja para testar?"
+            )
+        if segment is Segment.PSYCHOLOGY:
+            return (
+                f"{greeting} 😊 Aqui na *{display_name}* abrimos novos horários na agenda desta semana "
+                "(e emitimos recibo para reembolso no plano de saúde). Quer que eu veja o melhor dia para você?"
+            )
+        if segment is Segment.POOLS:
+            return (
+                f"{greeting} 🏊‍♂️ Nossa equipe técnica da *{display_name}* vai estar na sua região esta semana. "
+                "Quer aproveitar para agendarmos a avaliação do seu espaço sem compromisso?"
+            )
+        return (
+            f"{greeting} 😊 Passando aqui da *{display_name}* porque ainda consigo segurar aquela condição "
+            "que conversamos ontem. Ficou alguma dúvida para avançarmos?"
+        )
+
+    # Etapa 1 — Retomada Quente no mesmo dia (warm_check)
     if segment is Segment.MATTRESS:
         if size:
             return (
                 f"{greeting} 😊 Passando rapidinho porque ainda tenho o modelo *{size.capitalize()}* "
-                f"separado aqui na *{display_name}* com entrega grátis. "
-                "Ficou alguma dúvida sobre as medidas ou prefere que eu segure essa condição para você?"
+                f"a pronta-entrega aqui na *{display_name}* com frete grátis. "
+                "Ficou alguma dúvida sobre as medidas ou prefere que eu separe ele para você?"
             )
         return (
             f"{greeting} 😊 Passando para saber se conseguiu ver as opções de colchão que te mandei "
@@ -73,7 +159,7 @@ def build_followup_message(
         if specialty:
             return (
                 f"{greeting} 😊 Passando com carinho aqui da *{display_name}* para saber se ficou alguma dúvida "
-                f"sobre o atendimento de *{specialty}*. Se quiser, posso verificar os horários mais tranquilos desta semana para você."
+                f"sobre o atendimento de *{specialty}*. Se quiser, posso verificar os horários desta semana para você."
             )
         return (
             f"{greeting} 😊 Passando aqui da *{display_name}* para saber se posso te ajudar com alguma dúvida "
@@ -84,7 +170,7 @@ def build_followup_message(
         loc_part = f" aí em *{city}*" if city else ""
         return (
             f"{greeting} 🏊‍♂️ Passando aqui da *{display_name}* para saber se conseguiu medir o espaço do terreno{loc_part}. "
-            "Quer que eu separe um horário para nossa visita técnica sem compromisso?"
+            "Quer que eu separe um horário para nossa visita técnica?"
         )
 
     return (
@@ -94,7 +180,7 @@ def build_followup_message(
 
 
 class FollowUpService:
-    """Serviço de varredura e disparo de follow-up automático para leads que silenciaram."""
+    """Serviço de varredura e disparo da Régua Progressiva de Follow-up."""
 
     def __init__(
         self,
@@ -118,7 +204,7 @@ class FollowUpService:
         dry_run: bool = False,
         force: bool = False,
     ) -> dict[str, Any]:
-        """Avalia conversas ativas e envia (ou simula em `dry_run=True`) follow-ups elegíveis."""
+        """Avalia conversas ativas e envia (ou simula em `dry_run=True`) a próxima etapa da régua."""
         now = self._clock()
         conversations = await self._conv_store.list_conversations(tenant_id=tenant_id)
         evaluated = 0
@@ -137,6 +223,11 @@ class FollowUpService:
                 continue
 
             t_cfg = tenant.tenant
+            plan_spec = PLAN_SPECS.get(t_cfg.plan_tier) or PLAN_SPECS["pro"]
+            if not plan_spec.get("followup_allowed", True) and not force:
+                skipped.append({"tenant_id": lead.tenant_id, "phone": mask_phone(lead.phone), "reason": "plan_not_allowed"})
+                continue
+
             if not t_cfg.followup_enabled and not force:
                 skipped.append({"tenant_id": lead.tenant_id, "phone": mask_phone(lead.phone), "reason": "followup_disabled"})
                 continue
@@ -153,31 +244,40 @@ class FollowUpService:
                 skipped.append({"tenant_id": lead.tenant_id, "phone": mask_phone(lead.phone), "reason": "ai_paused"})
                 continue
 
+            steps = resolve_effective_steps(t_cfg)
             followup_count = int(lead.attributes.get("followup_count") or 0)
-            if followup_count >= t_cfg.followup_max_attempts:
+            if followup_count >= len(steps):
                 skipped.append({"tenant_id": lead.tenant_id, "phone": mask_phone(lead.phone), "reason": "max_attempts_reached"})
                 continue
 
+            current_step = steps[followup_count]
+            required_minutes = current_step.delay_minutes
             elapsed_minutes = (now - lead.last_interaction_at).total_seconds() / 60.0
-            if elapsed_minutes < t_cfg.followup_delay_minutes and not force:
+            if elapsed_minutes < required_minutes and not force:
                 skipped.append(
                     {
                         "tenant_id": lead.tenant_id,
                         "phone": mask_phone(lead.phone),
                         "reason": "delay_not_reached",
+                        "step": followup_count + 1,
+                        "strategy": current_step.strategy,
                         "elapsed_minutes": round(elapsed_minutes, 1),
-                        "required_minutes": t_cfg.followup_delay_minutes,
+                        "required_minutes": required_minutes,
                     }
                 )
                 continue
 
-            text = build_followup_message(lead, t_cfg.display_name, t_cfg.segment)
+            text = build_followup_message(lead, t_cfg.display_name, t_cfg.segment, step=current_step)
             candidate_info = {
                 "tenant_id": lead.tenant_id,
                 "phone": lead.phone,
                 "phone_masked": mask_phone(lead.phone),
                 "name": lead.name,
                 "attempt": followup_count + 1,
+                "total_steps": len(steps),
+                "step_label": current_step.label,
+                "strategy": current_step.strategy,
+                "required_minutes": required_minutes,
                 "elapsed_minutes": round(elapsed_minutes, 1),
                 "message": text,
             }
@@ -206,6 +306,7 @@ class FollowUpService:
                 _, history = await self._conv_store.load(lead.tenant_id, lead.phone)
                 lead.attributes["followup_count"] = str(followup_count + 1)
                 lead.attributes["last_followup_at"] = now.isoformat()
+                lead.attributes["last_followup_strategy"] = current_step.strategy
                 lead.last_interaction_at = now
                 history.append(AIMessage(content=text))
                 await self._conv_store.save(lead, history)
@@ -230,4 +331,4 @@ class FollowUpService:
         }
 
 
-__all__ = ["FollowUpService", "build_followup_message"]
+__all__ = ["FollowUpService", "build_followup_message", "resolve_effective_steps"]

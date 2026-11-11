@@ -19,7 +19,7 @@ from src.admin.diagnostics import INTEGRATIONS, integration_overview, run_all_ch
 from src.admin.playground import PlaygroundUnavailable
 from src.core.exceptions import ConfigurationError, GatewayError, LoboError, TenantNotFoundError
 from src.core.sandbox import SandboxConfig
-from src.core.schemas import OutgoingMessage, Provider, TenantId, mask_phone, normalize_phone, utcnow
+from src.core.schemas import PLAN_SPECS, OutgoingMessage, Provider, TenantId, mask_phone, normalize_phone, utcnow
 from src.tools.tenant_data import TenantData, stamp_missing_price_dates
 
 logger = logging.getLogger("lobo.admin")
@@ -144,6 +144,7 @@ def _validation_response(exc: ValidationError) -> JSONResponse:
 
 
 def _tenant_summary(t: TenantData) -> dict[str, Any]:
+    plan_spec = PLAN_SPECS.get(t.tenant.plan_tier) or PLAN_SPECS["pro"]
     return {
         "tenant_id": t.tenant_id,
         "display_name": t.tenant.display_name,
@@ -151,10 +152,13 @@ def _tenant_summary(t: TenantData) -> dict[str, Any]:
         "niche_name": t.tenant.niche_name,
         "custom_instructions": t.tenant.custom_instructions,
         "plan_tier": t.tenant.plan_tier,
-        "monthly_turn_limit": t.tenant.monthly_turn_limit,
+        "plan_spec": plan_spec,
+        "monthly_turn_limit": t.tenant.monthly_turn_limit or plan_spec["monthly_turn_limit"],
         "followup_enabled": t.tenant.followup_enabled,
         "followup_delay_minutes": t.tenant.followup_delay_minutes,
         "followup_max_attempts": t.tenant.followup_max_attempts,
+        "followup_steps": [s.model_dump(mode="json") for s in t.tenant.followup_steps],
+        "external_webhook_url": t.tenant.external_webhook_url,
         "active": t.tenant.active,
         "demo_data": t.demo_data,
         "whatsapp_provider": t.tenant.whatsapp_provider.value,
@@ -205,6 +209,7 @@ async def overview(request: Request) -> dict[str, Any]:
         "sandbox_active": sandbox["active"],
         "sandbox_forced": sandbox["forced_by_environment"],
         "tenants": [_tenant_summary(t) for t in st.tenants.all()],
+        "plans": PLAN_SPECS,
         "integrations": integration_overview(settings, st.tenants),
         "playground_gemini_available": st.playground.gemini_available,
         "server_time": utcnow().isoformat(),
@@ -340,6 +345,31 @@ async def tenants_get(request: Request, tenant_id: TenantId) -> dict[str, Any]:
 
 async def _save_tenant(request: Request, payload: dict[str, Any], *, create: bool, path_id: str | None) -> Any:
     st = _state(request)
+    # Normaliza debounce_max_window_seconds quando o usuário move apenas o slider de silêncio na UI
+    t_raw = payload.get("tenant")
+    if isinstance(t_raw, dict):
+        s_val = t_raw.get("debounce_silence_seconds")
+        m_val = t_raw.get("debounce_max_window_seconds")
+        if s_val is not None and m_val is not None:
+            try:
+                if float(s_val) >= float(m_val):
+                    t_raw["debounce_max_window_seconds"] = min(60.0, float(s_val) + 5.0)
+            except (TypeError, ValueError):
+                pass
+        plan_code = str(t_raw.get("plan_tier") or "pro")
+        plan_spec = PLAN_SPECS.get(plan_code) or PLAN_SPECS["pro"]
+        if not plan_spec.get("followup_allowed", True):
+            t_raw["followup_enabled"] = False
+        max_items = plan_spec.get("max_catalog_items")
+        cat_items = (payload.get("catalog") or {}).get("items") or []
+        if max_items is not None and len(cat_items) > int(max_items):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"O {plan_spec['name']} permite até {max_items} itens no catálogo "
+                    f"(atual: {len(cat_items)}). Mude para o Plano Pro Vendas para catálogo ilimitado."
+                ),
+            )
     try:
         data = TenantData.model_validate(payload)
     except ValidationError as exc:

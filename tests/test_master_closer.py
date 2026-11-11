@@ -680,26 +680,51 @@ async def test_humanizer_pt_br_custom_niche_plans_and_automatic_followup(
         ],
     )
 
+    # Disparo real do 1º toque (Mesmo Dia — Retomada Quente: 60 min)
     gw = _ReactionRecordingGateway()
+    current_clock = FIXED_NOW
     followup_svc = FollowUpService(
         store=store,
         conversation_store=conv_store,
         pause_registry=pause_registry,
         gateway_resolver=lambda _p: gw,
-        clock=_fixed_clock,
+        clock=lambda: current_clock,
     )
 
-    # Disparo real do sweep
     sweep1 = await followup_svc.run_sweep(tenant_id="clinica-sorriso")
     assert sweep1["eligible_count"] == 1
     assert sweep1["sent_count"] == 1
+    assert sweep1["eligible"][0]["strategy"] == "warm_check"
     assert len(gw.sent_messages) == 1
     assert "Fernanda" in gw.sent_messages[0]
     assert "Clínica Sorriso Prime" in gw.sent_messages[0]
 
-    # Segunda execução imediata não reenvia pois last_interaction_at foi atualizado para FIXED_NOW
+    # 2 horas depois: NÃO deve disparar o 2º toque ainda, pois a Etapa 2 da régua exige +1 dia (1440 min)!
+    current_clock = FIXED_NOW + timedelta(hours=2)
+    sweep_too_early = await followup_svc.run_sweep(tenant_id="clinica-sorriso")
+    assert sweep_too_early["sent_count"] == 0
+
+    # +1 dia e 5 minutos depois: agora sim dispara o 2º toque (Dia Seguinte — Reforço de Valor: 1440 min)
+    current_clock = FIXED_NOW + timedelta(minutes=1445)
     sweep2 = await followup_svc.run_sweep(tenant_id="clinica-sorriso")
-    assert sweep2["sent_count"] == 0
+    assert sweep2["sent_count"] == 1
+    assert sweep2["eligible"][0]["attempt"] == 2
+    assert sweep2["eligible"][0]["strategy"] == "value_reinforce"
+    assert len(gw.sent_messages) == 2
+
+    # 4. Validação das especificações dos Planos Comerciais (alinhados ao Pitch Comercial)
+    from src.core.schemas import PLAN_SPECS
+
+    assert PLAN_SPECS["starter"]["price_brl"] == 790
+    assert PLAN_SPECS["starter"]["monthly_turn_limit"] == 800
+    assert PLAN_SPECS["starter"]["max_catalog_items"] == 15
+    assert PLAN_SPECS["starter"]["followup_allowed"] is False
+    assert PLAN_SPECS["pro"]["price_brl"] == 1690
+    assert PLAN_SPECS["pro"]["monthly_turn_limit"] == 2500
+    assert PLAN_SPECS["pro"]["followup_allowed"] is True
+    assert PLAN_SPECS["enterprise"]["price_brl"] == 2990
+    assert PLAN_SPECS["enterprise"]["monthly_turn_limit"] == 6000
+    assert PLAN_SPECS["enterprise"]["external_api_allowed"] is True
 
 
 # =========================================================================== #

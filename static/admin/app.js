@@ -22,9 +22,62 @@
     ["retail", "Varejo Geral / Móveis / Moda / Ótica"],
   ];
   const PLAN_OPTIONS = [
-    ["starter", "Plano Starter (SDR Essencial — Gemini Flash)"],
-    ["pro", "Plano Growth / Pro (SDR + Closer + Agenda + CRM)"],
-    ["enterprise", "Plano Scale / Enterprise (Multi-Sessão + Gemini Pro + Follow-up)"],
+    ["starter", "Plano Essencial — R$ 790/mês (até 800 conversas · 15 itens)"],
+    ["pro", "Plano Pro Vendas — R$ 1.690/mês (até 2.500 conversas · Follow-up + CRM)"],
+    ["enterprise", "Escala Enterprise — R$ 2.990/mês (até 6.000 conversas · Multi-Filial + ERP)"],
+  ];
+  const PLAN_SPECS = {
+    starter: {
+      name: "Plano Essencial",
+      subtitle: "Para consultórios e pequenas lojas",
+      price: "R$ 790/mês",
+      setup: "Setup: R$ 2.500 (única)",
+      max_whatsapp_numbers: 1,
+      monthly_turn_limit: 800,
+      max_catalog_items: 15,
+      followup_allowed: false,
+      max_followup_steps: 0,
+      crm_allowed: false,
+      features: ["1 número de WhatsApp", "Até 800 conversas/mês", "Compreensão de áudios", "Catálogo de até 15 itens", "Horário noturno e fins de semana"],
+    },
+    pro: {
+      name: "Plano Pro Vendas",
+      subtitle: "Para varejo, clínicas, colchões e piscinas (Mais Recomendado)",
+      price: "R$ 1.690/mês",
+      setup: "Setup: R$ 4.500 (única)",
+      max_whatsapp_numbers: 2,
+      monthly_turn_limit: 2500,
+      max_catalog_items: null,
+      followup_allowed: true,
+      max_followup_steps: 4,
+      crm_allowed: true,
+      features: ["1 a 2 números de WhatsApp", "Até 2.500 conversas/mês", "Compreensão nativa de áudios", "Catálogo completo ilimitado", "Inteligência de frete por bairro", "Régua de follow-up automático (até 4 etapas)", "Integração CRM (Chatwoot / GHL)"],
+    },
+    enterprise: {
+      name: "Escala Enterprise",
+      subtitle: "Para franquias e redes com filiais",
+      price: "R$ 2.990/mês",
+      setup: "Setup: sob consulta",
+      max_whatsapp_numbers: 4,
+      monthly_turn_limit: 6000,
+      max_catalog_items: null,
+      followup_allowed: true,
+      max_followup_steps: 6,
+      crm_allowed: true,
+      features: ["Até 4 números / departamentos", "Até 6.000 conversas/mês", "Catálogo completo ilimitado", "Integração com ERP / Estoque / API Externa", "Régua de follow-up completa (até 6 etapas)", "Suporte VIP e SLA prioritário"],
+    },
+  };
+  const FOLLOWUP_STRATEGIES = [
+    ["warm_check", "1º Toque — Retomada Quente (Dúvida / Produto)"],
+    ["value_reinforce", "Reforço de Valor / Condição (Parcelamento / Agenda)"],
+    ["objection_break", "Quebra de Objeção / Reativação Consultiva"],
+    ["breakup", "Encerramento Elegante / Break-up (Sem Pressão)"],
+  ];
+  const DEFAULT_FOLLOWUP_STEPS = [
+    { step: 1, delay_minutes: 120, label: "1º Toque — Mesmo Dia (Retomada Quente)", strategy: "warm_check", custom_message: null },
+    { step: 2, delay_minutes: 1440, label: "2º Toque — Dia Seguinte (+1 dia)", strategy: "value_reinforce", custom_message: null },
+    { step: 3, delay_minutes: 4320, label: "3º Toque — Reativação Consultiva (+3 dias)", strategy: "objection_break", custom_message: null },
+    { step: 4, delay_minutes: 10080, label: "4º Toque — Despedida Sem Pressão (+7 dias)", strategy: "breakup", custom_message: null },
   ];
   const LLM_MODELS = ["default", "gemini-3.8-flash", "gemini-2.5-pro", "gemini-3-pro", "gemini-4-argon", "gpt-4o", "gpt-4o-mini"];
   const LLM_MODEL_OPTIONS = [
@@ -725,10 +778,27 @@
   }
   const val = (path) => getPath(S.draft, path);
   const inp = (path, type = "str", attrs = "") => `<input data-path="${esc(path)}" data-type="${type}" value="${esc(Array.isArray(val(path)) ? val(path).join(", ") : val(path) ?? "")}" ${attrs}>`;
-  const chk = (path, label) => `<label class="check"><input type="checkbox" data-path="${esc(path)}" data-type="bool" ${val(path) ? "checked" : ""}> ${esc(label)}</label>`;
+  const chk = (path, label, attrs = "") => `<label class="check"><input type="checkbox" data-path="${esc(path)}" data-type="bool" ${val(path) ? "checked" : ""} ${attrs}> ${esc(label)}</label>`;
   const sel = (path, options, attrs = "") => `<select data-path="${esc(path)}" ${attrs}>${options.map((o) => `<option value="${esc(o)}" ${val(path) === o ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
-  const selPairs = (path, pairs, attrs = "") => `<select data-path="${esc(path)}" ${attrs}>${pairs.map(([v, lbl]) => `<option value="${esc(v)}" ${(val(path) || "gemini-3.8-flash") === v ? "selected" : ""}>${esc(lbl)}</option>`).join("")}</select>`;
+  const selPairs = (path, pairs, defaultVal = "", attrs = "") => {
+    const cur = val(path) || defaultVal;
+    return `<select data-path="${esc(path)}" ${attrs}>${pairs.map(([v, lbl]) => `<option value="${esc(v)}" ${cur === v ? "selected" : ""}>${esc(lbl)}</option>`).join("")}</select>`;
+  };
   const field = (label, control, cls = "") => `<label class="field ${cls}"><span>${esc(label)}</span>${control}</label>`;
+
+  function splitDelayUnit(mins) {
+    const m = Math.max(1, Number(mins) || 120);
+    if (m >= 1440 && m % 1440 === 0) return { num: m / 1440, unit: "days", human: `${m / 1440} dia(s)` };
+    if (m >= 60 && m % 60 === 0) return { num: m / 60, unit: "hours", human: `${m / 60} hora(s)` };
+    return { num: m, unit: "minutes", human: `${m} min` };
+  }
+
+  function ensureFollowupSteps(t) {
+    if (!Array.isArray(t.followup_steps) || !t.followup_steps.length) {
+      t.followup_steps = clone(DEFAULT_FOLLOWUP_STEPS);
+    }
+    return t.followup_steps;
+  }
 
   function synonymsText() {
     return Object.entries(val("catalog.synonyms") || {}).map(([k, list]) => `${k}: ${(list || []).join(", ")}`).join("\n");
@@ -809,25 +879,101 @@
         <button class="btn btn-sm btn-danger" data-act="disable-calendar" style="margin-top:12px">Desativar agenda</button>`
       : `<div class="empty">Agenda desativada para este cliente. <button class="btn btn-sm btn-primary" data-act="enable-calendar">Ativar agenda</button></div>`;
 
+    const planTier = t.plan_tier || "pro";
+    const planSpec = PLAN_SPECS[planTier] || PLAN_SPECS.pro;
+    const fSteps = ensureFollowupSteps(t);
+    const catCount = items.length;
+    const catMax = planSpec.max_catalog_items;
+    const catBadge = catMax ? `${catCount} / ${catMax} itens (${catCount > catMax ? "⚠️ acima do limite do plano" : "dentro do limite"})` : `${catCount} itens (Catálogo Ilimitado ✅)`;
+
+    const planSummaryCard = `
+      <div class="notice ${planTier === "pro" ? "notice-info" : ""}" style="margin:12px 0;padding:14px;border-radius:12px">
+        <div class="row-between" style="flex-wrap:wrap;gap:8px;margin-bottom:8px">
+          <div>
+            <strong>💎 ${esc(planSpec.name)}</strong> — <span class="mono">${esc(planSpec.price)}</span>
+            <span class="muted small">(${esc(planSpec.setup)} · ${esc(planSpec.subtitle)})</span>
+          </div>
+          <div class="chips">
+            <span class="chip chip-info">📱 Até ${esc(planSpec.max_whatsapp_numbers)} WhatsApp(s)</span>
+            <span class="chip chip-ok">💬 Franquia: ${esc((t.monthly_turn_limit || planSpec.monthly_turn_limit).toLocaleString("pt-BR"))} conversas/mês</span>
+            <span class="chip ${catMax && catCount > catMax ? "chip-err" : "chip-info"}">🛍️ ${esc(catBadge)}</span>
+            <span class="chip ${planSpec.followup_allowed ? "chip-ok" : "chip-warn"}">${planSpec.followup_allowed ? `🔄 Régua de Follow-up liberada (até ${planSpec.max_followup_steps} etapas)` : "🔒 Sem Follow-up Automático no Essencial"}</span>
+          </div>
+        </div>
+        <div class="chips">${planSpec.features.map((f) => `<span class="chip">${esc(f)}</span>`).join("")}</div>
+      </div>`;
+
+    const followupRows = fSteps.map((st, idx) => {
+      const du = splitDelayUnit(st.delay_minutes);
+      return `<tr data-fu-row="${idx}">
+        <td style="width:120px"><strong>${idx + 1}º Toque</strong><div class="muted small">${esc(du.human)} após anterior</div></td>
+        <td style="width:220px">
+          <div class="row-between" style="gap:6px">
+            <input type="number" min="1" max="365" value="${esc(du.num)}" data-fu-num="${idx}" style="width:85px">
+            <select data-fu-unit="${idx}">
+              <option value="minutes" ${du.unit === "minutes" ? "selected" : ""}>Minutos</option>
+              <option value="hours" ${du.unit === "hours" ? "selected" : ""}>Horas</option>
+              <option value="days" ${du.unit === "days" ? "selected" : ""}>Dias</option>
+            </select>
+          </div>
+        </td>
+        <td style="width:260px">
+          <select data-path="tenant.followup_steps.${idx}.strategy">
+            ${FOLLOWUP_STRATEGIES.map(([valKey, lbl]) => `<option value="${esc(valKey)}" ${st.strategy === valKey ? "selected" : ""}>${esc(lbl)}</option>`).join("")}
+          </select>
+        </td>
+        <td>
+          <input data-path="tenant.followup_steps.${idx}.custom_message" data-type="str?" value="${esc(st.custom_message || "")}" placeholder="Automático conforme nicho/produto (ou digite usando {nome} e {empresa})">
+        </td>
+        <td class="actions"><button class="btn btn-sm btn-danger" data-act="del-fu-step" data-i="${idx}" title="Remover etapa">🗑️</button></td>
+      </tr>`;
+    }).join("");
+
+    const followupCard = `
+      <article class="card section">
+        <div class="card-head">
+          <div>
+            <h2>🔄 Régua de Follow-up Progressiva (Recuperação de Vendas)</h2>
+            <small class="muted">Cada etapa aguarda o tempo configurado após o envio anterior (ex.: 2h → +1 dia → +3 dias → +7 dias). Só dispara se o lead parar de responder e a IA não estiver pausada.</small>
+          </div>
+          <div class="chips">
+            <button class="btn btn-sm" data-act="reset-fu-steps">↺ Padrão (2h → 1d → 3d → 7d)</button>
+            <button class="btn btn-sm btn-primary" data-act="test-fu-dryrun">⚡ Simular Régua Agora</button>
+          </div>
+        </div>
+        ${!planSpec.followup_allowed ? `<div class="notice notice-warn" style="margin-bottom:12px">🔒 <strong>Recurso bloqueado no Plano Essencial:</strong> A Régua de Follow-up Automático está disponível a partir do <strong>Plano Pro Vendas (R$ 1.690/mês)</strong>. Altere o Plano Comercial acima para ativar.</div>` : ""}
+        <div class="chips" style="margin-bottom:12px">
+          ${chk("tenant.followup_enabled", "Ativar Régua de Follow-up Automático para leads inativos deste cliente", !planSpec.followup_allowed ? "disabled" : "")}
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>Etapa</th><th>Tempo de espera após último envio</th><th>Objetivo / Estratégia</th><th>Mensagem personalizada (opcional)</th><th></th></tr></thead>
+            <tbody>${followupRows}</tbody>
+          </table>
+        </div>
+        <div class="row-between" style="margin-top:10px">
+          <button class="btn btn-sm btn-success" data-act="add-fu-step" ${!planSpec.followup_allowed || fSteps.length >= (planSpec.max_followup_steps || 6) ? "disabled" : ""}>+ Adicionar Etapa na Régua</button>
+          <span id="fu-dryrun-result" class="muted small"></span>
+        </div>
+      </article>`;
+
     $("#tn-editor").innerHTML = `
       <article class="card">
-        <div class="card-head"><h2>⚙️ Configurações gerais</h2>${d.demo_data ? `<span class="chip tag-demo">DADOS DE DEMONSTRAÇÃO</span>` : `<span class="chip chip-ok">dados reais</span>`}</div>
+        <div class="card-head"><h2>⚙️ Configurações gerais &amp; Plano Comercial</h2>${d.demo_data ? `<span class="chip tag-demo">DADOS DE DEMONSTRAÇÃO</span>` : `<span class="chip chip-ok">dados reais</span>`}</div>
         <div class="form-grid cols-4">
           ${field("tenant_id", `<input value="${esc(t.tenant_id)}" disabled>`)}
           ${field("Nome de exibição", inp("tenant.display_name"), "span-2")}
-          ${field("Segmento / Categoria", selPairs("tenant.segment", SEGMENT_OPTIONS))}
+          ${field("Segmento / Categoria", selPairs("tenant.segment", SEGMENT_OPTIONS, "generic"))}
           ${field("Nicho / Especialidade Livre", inp("tenant.niche_name", "str?", 'placeholder="ex.: Energia Solar, implantes, móveis planejados"'), "span-2")}
-          ${field("Plano Comercial", selPairs("tenant.plan_tier", PLAN_OPTIONS))}
-          ${field("Franquia mensal (turnos IA)", inp("tenant.monthly_turn_limit", "int?", 'type="number" min="100" placeholder="ilimitado"'))}
+          ${field("Plano Comercial", selPairs("tenant.plan_tier", PLAN_OPTIONS, "pro", 'data-act="plan-tier"'), "span-2")}
+          ${field("Franquia mensal (conversas/mês)", inp("tenant.monthly_turn_limit", "int?", 'type="number" min="100" placeholder="2500"'))}
           ${field("Fuso horário", inp("tenant.timezone", "str", 'placeholder="America/Belem"'))}
           ${field("Provedor WhatsApp", sel("tenant.whatsapp_provider", ["waha", "astracalls"]))}
           ${field("Sessão WhatsApp", inp("tenant.whatsapp_session_id", "str?", 'placeholder="ex.: Danyllo"'))}
-          ${field("CRM", sel("tenant.crm_provider", ["chatwoot", "ghl", "none"], 'data-act="crm-provider"'))}
-          ${field("Modelo de IA", selPairs("tenant.llm_model", LLM_MODEL_OPTIONS), "span-2")}
+          ${field("CRM Nativo", sel("tenant.crm_provider", ["chatwoot", "ghl", "none"], 'data-act="crm-provider"'))}
+          ${field("Modelo de IA", selPairs("tenant.llm_model", LLM_MODEL_OPTIONS, "gemini-3.8-flash"), "span-2")}
           ${field("Chave HMAC / Secret do Webhook", inp("tenant.webhook_secret", "str?", 'placeholder="opcional (sobrescreve .env)"'), "span-2")}
-          ${field("Follow-up após inatividade (min)", inp("tenant.followup_delay_minutes", "int", 'type="number" min="15" max="10080"'))}
-          ${field("Máx. tentativas de Follow-up", inp("tenant.followup_max_attempts", "int", 'type="number" min="1" max="5"'))}
-          <label class="field span-2">
+          <label class="field span-4">
             <span>Instruções Específicas da Empresa (Prompt Customizado do Nicho)</span>
             <textarea data-path="tenant.custom_instructions" data-type="str?" rows="2" placeholder="Regras extras de atendimento, diferenciais ou perguntas específicas desta empresa…">${esc(val("tenant.custom_instructions") || "")}</textarea>
           </label>
@@ -840,11 +986,18 @@
             <input type="range" data-path="tenant.debounce_max_window_seconds" data-type="num?" min="5" max="60" step="1" value="${esc(t.debounce_max_window_seconds ?? S.overview?.debounce?.max_window_seconds ?? 20)}">
           </label>
         </div>
-        <div class="chips" style="margin-top:12px">${chk("tenant.active", "Cliente ativo (webhook atende)")}${chk("tenant.split_messages", "Ativar Envio Humanizado em Partes (picotar mensagens longas)")}${chk("tenant.followup_enabled", "Ativar Follow-up Automático para leads inativos")}${chk("demo_data", "Dados de demonstração (demo_data) — bloqueados em produção")}</div>
+        ${planSummaryCard}
+        <div class="chips" style="margin-top:12px">${chk("tenant.active", "Cliente ativo (webhook atende)")}${chk("tenant.split_messages", "Ativar Envio Humanizado em Partes (picotar mensagens longas)")}${chk("demo_data", "Dados de demonstração (demo_data)")}</div>
         <div class="divider"></div>
-        <h3>🔌 CRM (${esc(t.crm_provider)})</h3>
+        <h3>🔌 CRM (${esc(t.crm_provider)}) &amp; Conectores Externos via API (ERP / Bling / Asaas / n8n)</h3>
         ${crmBlock}
+        <div class="form-grid cols-3" style="margin-top:12px">
+          ${field("Webhook de Saída / API Externa (ERP, n8n, Make, Asaas)", inp("tenant.external_webhook_url", "str?", 'placeholder="https://seu-erp-ou-n8n.com/webhook/lobo"'), "span-2")}
+          ${field("Token Bearer da API Externa (opcional)", inp("tenant.external_api_token", "str?", 'type="password" placeholder="Bearer token opcional"'))}
+        </div>
       </article>
+
+      ${followupCard}
 
       <article class="card section">
         <div class="card-head"><h2>🛍️ Catálogo &amp; Preços</h2><button class="btn btn-success btn-sm" data-act="new-item">+ Novo Produto/Serviço</button></div>
@@ -902,10 +1055,37 @@
       setDirty(true);
       return;
     }
+    if (el.dataset.fuNum !== undefined || el.dataset.fuUnit !== undefined) {
+      const idx = Number(el.dataset.fuNum ?? el.dataset.fuUnit);
+      const row = el.closest("tr[data-fu-row]");
+      if (row) {
+        const num = Math.max(1, parseInt(row.querySelector(`[data-fu-num="${idx}"]`).value, 10) || 1);
+        const unit = row.querySelector(`[data-fu-unit="${idx}"]`).value;
+        const mult = unit === "days" ? 1440 : unit === "hours" ? 60 : 1;
+        const mins = Math.min(43200, num * mult);
+        const steps = ensureFollowupSteps(S.draft.tenant);
+        if (steps[idx]) {
+          steps[idx].delay_minutes = mins;
+          if (idx === 0) S.draft.tenant.followup_delay_minutes = mins;
+        }
+        setDirty(true);
+      }
+      return;
+    }
     if (!el.dataset.path) return;
     if (el.dataset.path === "tenant.debounce_silence_seconds") {
       const lbl = $("#tn-silence-val");
       if (lbl) lbl.textContent = `${el.value}s`;
+      const sNum = Number(el.value);
+      const curMax = Number(S.draft.tenant.debounce_max_window_seconds ?? S.overview?.debounce?.max_window_seconds ?? 20);
+      if (curMax <= sNum) {
+        const nextMax = Math.min(60, sNum + 5);
+        S.draft.tenant.debounce_max_window_seconds = nextMax;
+        const maxInput = editor.querySelector('[data-path="tenant.debounce_max_window_seconds"]');
+        if (maxInput) maxInput.value = nextMax;
+        const maxLbl = $("#tn-max-window-val");
+        if (maxLbl) maxLbl.textContent = `${nextMax}s`;
+      }
     } else if (el.dataset.path === "tenant.debounce_max_window_seconds") {
       const lbl = $("#tn-max-window-val");
       if (lbl) lbl.textContent = `${el.value}s`;
@@ -919,6 +1099,18 @@
       if (el.value === "chatwoot" && !S.draft.crm?.chatwoot) setPath(S.draft, "crm.chatwoot", { account_id: 1, assignee_means_human: false });
       if (el.value === "ghl" && !S.draft.crm?.ghl) setPath(S.draft, "crm.ghl", { token_setting: "ghl_vizzu_api_token", location_setting: "ghl_vizzu_location_id" });
       renderTenant();
+    } else if (el.dataset.act === "plan-tier") {
+      const spec = PLAN_SPECS[el.value] || PLAN_SPECS.pro;
+      S.draft.tenant.plan_tier = el.value;
+      S.draft.tenant.monthly_turn_limit = spec.monthly_turn_limit;
+      if (!spec.followup_allowed) {
+        S.draft.tenant.followup_enabled = false;
+      }
+      setDirty(true);
+      renderTenant();
+      toast("ok", `💎 ${spec.name} selecionado`, `${spec.price} · Franquia ajustada para ${spec.monthly_turn_limit.toLocaleString("pt-BR")} conversas/mês`);
+    } else if (el.dataset.fuUnit !== undefined) {
+      renderTenant();
     }
   });
   editor.addEventListener("click", async (ev) => {
@@ -927,6 +1119,38 @@
     const i = Number(btn.dataset.i);
     const d = S.draft;
     switch (btn.dataset.act) {
+      case "add-fu-step": {
+        const steps = ensureFollowupSteps(d.tenant);
+        const nextNum = steps.length + 1;
+        steps.push({ step: nextNum, delay_minutes: 4320, label: `${nextNum}º Toque`, strategy: "objection_break", custom_message: null });
+        d.tenant.followup_max_attempts = steps.length;
+        break;
+      }
+      case "del-fu-step": {
+        const steps = ensureFollowupSteps(d.tenant);
+        if (steps.length <= 1) { toast("err", "A régua precisa de ao menos 1 etapa", "Para desligar, desmarque a opção de Follow-up Automático."); return; }
+        steps.splice(i, 1);
+        steps.forEach((s, idx) => { s.step = idx + 1; });
+        d.tenant.followup_max_attempts = steps.length;
+        break;
+      }
+      case "reset-fu-steps": {
+        d.tenant.followup_steps = clone(DEFAULT_FOLLOWUP_STEPS);
+        d.tenant.followup_delay_minutes = 120;
+        d.tenant.followup_max_attempts = 4;
+        toast("ok", "Régua restaurada", "Cadência progressiva: 2h → +1 dia → +3 dias → +7 dias");
+        break;
+      }
+      case "test-fu-dryrun": {
+        const r = await act(btn, "Simulação da Régua de Follow-up concluída", () => api("POST", "/api/admin/followup/run", { tenant_id: d.tenant.tenant_id, dry_run: true, force: true }));
+        const outEl = $("#fu-dryrun-result");
+        if (r.ok && outEl) {
+          outEl.innerHTML = r.data.eligible_count > 0
+            ? `🟢 <strong>${r.data.eligible_count} contato(s)</strong> receberiam follow-up agora: <em>"${esc(r.data.eligible[0].message.slice(0, 110))}…"</em>`
+            : `ℹ️ <strong>${r.data.evaluated} conversa(s) avaliada(s)</strong> — nenhum lead aguardando retorno neste momento.`;
+        }
+        return;
+      }
       case "add-zone": (d.delivery ||= { zones: [] }).zones.push({ cities: [], fee: "0.00", lead_time_days_min: 1, lead_time_days_max: 2, business_days: true }); break;
       case "del-zone": d.delivery.zones.splice(i, 1); break;
       case "add-service": d.calendar.services.push({ service_id: `servico_${d.calendar.services.length + 1}`, name: "Novo serviço", duration_minutes: 30, capacity: 1 }); break;

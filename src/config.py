@@ -199,7 +199,7 @@ class Settings(BaseSettings):
     def effective_allow_demo(self) -> bool:
         if self.allow_demo_data is not None:
             return self.allow_demo_data
-        return not self.is_production
+        return True
 
     @property
     def async_database_url(self) -> str:
