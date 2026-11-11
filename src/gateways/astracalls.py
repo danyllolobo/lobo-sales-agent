@@ -19,7 +19,7 @@ import json
 import logging
 from collections.abc import Mapping
 from typing import Any, ClassVar
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, unquote, urlsplit
 
 import httpx
 from pydantic import SecretStr, ValidationError
@@ -332,6 +332,18 @@ class AstraCallsGateway(WhatsAppGateway):
         mid = resp.get("id") if isinstance(resp, Mapping) else None
         return SendResult(provider=self.provider, message_id=str(mid) if mid else None, raw=resp or {})
 
+    @staticmethod
+    def _is_safe_media_path(path: str) -> bool:
+        """Valida caminhos de mídia do AstraCalls contra Path Traversal (`..`) e rotas fora de mídia."""
+        if not path or not path.startswith("/"):
+            return False
+        decoded = unquote(path)
+        if ".." in decoded or "\\" in decoded or "//" in decoded:
+            return False
+        return decoded.startswith(("/api/", "/v1/", "/files/", "/media/")) and (
+            "/media" in decoded or "/files/" in decoded
+        )
+
     async def download_media(self, message: IncomingMessage) -> bytes:
         media = message.media
         if media is None:
@@ -342,8 +354,11 @@ class AstraCallsGateway(WhatsAppGateway):
         candidates: list[tuple[str, str]] = []
         if media.url:
             parts = urlsplit(media.url)
-            path_q = parts.path + (f"?{parts.query}" if parts.query else "")
-            candidates.append((parts.path, f"{self.base_url}{path_q}"))
+            if self._is_safe_media_path(parts.path):
+                path_q = parts.path + (f"?{parts.query}" if parts.query else "")
+                candidates.append((parts.path, f"{self.base_url}{path_q}"))
+            else:
+                logger.warning("AstraCalls: caminho de mídia ignorado por segurança: %s", parts.path)
 
         media_id = media.provider_media_id or message.message_id
         msg_path = self._session_path(message.session_id, f"messages/{quote(media_id, safe='')}/media")

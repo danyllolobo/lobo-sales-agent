@@ -489,3 +489,308 @@ async def test_per_tenant_llm_model_and_sparse_emoji_reactions_in_runner(
     assert pick_reaction_emoji("Perfeito, amei as opções!") == "❤️"
     assert pick_reaction_emoji("Combinado, fechado então!") == "👍"
     assert pick_reaction_emoji("Qual o tamanho do colchão queen?") is None
+
+
+# =========================================================================== #
+# 6. Filtro Estrito de Tamanho (King != Queen) e Zero Alucinação de Estoque
+# =========================================================================== #
+async def test_king_models_query_returns_only_king_in_stock_and_never_hallucinates_queen_or_stockout(
+    store: JsonTenantDataStore,
+    fake_redis,
+):
+    catalog = CatalogService(store, clock=_fixed_clock)
+    # Mesmo buscando "colchão king", NUNCA deve retornar Queen, Casal ou Solteiro
+    search_res = await catalog.search_catalog("companhia-dos-sonhos", "colchão king")
+    assert search_res.ok is True
+    results = search_res.data["results"]
+    assert len(results) >= 2
+    for item in results:
+        assert item["attributes"]["tamanho"] == "king"
+        assert item["in_stock"] is True
+        assert "queen" not in item["name"].lower()
+
+    runner = _build_runner(store, fake_redis)
+    batch = MessageBatch(
+        tenant_id="companhia-dos-sonhos",
+        contact_phone="5591988884444",
+        session_id="Danyllo",
+        messages=[
+            IncomingMessage(
+                message_id="MSG_KING_1",
+                tenant_id="companhia-dos-sonhos",
+                provider=Provider.WAHA,
+                session_id="Danyllo",
+                contact_phone="5591988884444",
+                contact_name="Roberto",
+                type=MessageType.TEXT,
+                text="Quais os valores e modelos da King?",
+            )
+        ],
+        first_received_at=FIXED_NOW,
+        flushed_at=FIXED_NOW,
+    )
+
+    turn = await runner.handle_batch(batch)
+    assert turn.human_handoff_requested is False
+    assert turn.reply_text is not None
+    reply_lower = turn.reply_text.lower()
+
+    # Deve mostrar os modelos King com preços reais
+    assert "Colchão Molas Ensacadas Prime King" in turn.reply_text
+    assert "R$ 4.299,00" in turn.reply_text
+    assert "Colchão Ortopédico D45 Premium King" in turn.reply_text
+    assert "R$ 3.699,00" in turn.reply_text
+
+    # NUNCA deve oferecer Queen quando o cliente pediu King, nem inventar aviso de esgotado/fábrica
+    assert "queen" not in reply_lower
+    assert "aviso importante" not in reply_lower
+    assert "esgotado" not in reply_lower
+    assert "última unidade" not in reply_lower
+    assert "encomenda" not in reply_lower
+    # Como o cliente já pediu King, não deve perguntar novamente qual medida ele precisa
+    assert "qual *medida* você precisa" not in reply_lower
+
+
+async def test_product_inquiry_blocks_calendar_tools_and_split_chunks_never_reorders_paragraphs(
+    store: JsonTenantDataStore,
+    fake_redis,
+):
+    from langchain_core.messages import AIMessage, HumanMessage
+    from src.agent.nodes import _has_scheduling_signal
+    from src.agent.prompts import build_system_prompt
+
+    # 1. Pergunta pura de produto/estoque NÃO habilita ferramentas de agenda (impossível inserir datas soltas!)
+    assert _has_scheduling_signal("Vocês tem o king ainda?") is False
+    assert _has_scheduling_signal("Quais os valores e modelos da King?") is False
+    # Já pedido de visita/horário habilita normalmente
+    assert _has_scheduling_signal("Quero agendar uma visita na loja amanhã") is True
+
+    # 2. split_human_chunks NUNCA reordena parágrafos (nunca puxa lista do fim para o meio dos produtos)
+    text_with_two_lists = (
+        "Temos sim, D Lobo! Temos duas opções no tamanho King:\n\n"
+        "✅ *Colchão Molas Ensacadas Prime King*\n💰 *R$ 4.299,00*\n\n"
+        "✅ *Colchão Ortopédico D45 Premium King*\n💰 *R$ 3.699,00*\n\n"
+        "Se quiser vir experimentar aqui na loja da Tavares Bastos amanhã, tenho horários livres:\n\n"
+        "1. *quinta-feira, 12/11 às 09:00*\n2. *quinta-feira, 12/11 às 12:00*"
+    )
+    chunks = split_human_chunks(text_with_two_lists)
+    joined_order = "\n\n".join(chunks)
+    assert joined_order.index("Se quiser vir experimentar") < joined_order.index("quinta-feira, 12/11")
+
+    # 3. Engenharia de System Prompt com tags XML e Memória Ativa da Sessão
+    tenant = store.get("companhia-dos-sonhos")
+    runner = _build_runner(store, fake_redis)
+    res = await runner.handle_batch(
+        MessageBatch(
+            tenant_id="companhia-dos-sonhos",
+            contact_phone="5591988885555",
+            session_id="Danyllo",
+            messages=[
+                IncomingMessage(
+                    message_id="MSG_K_ST_1",
+                    tenant_id="companhia-dos-sonhos",
+                    provider=Provider.WAHA,
+                    session_id="Danyllo",
+                    contact_phone="5591988885555",
+                    contact_name="D Lobo",
+                    type=MessageType.TEXT,
+                    text="Vocês tem o king ainda?",
+                )
+            ],
+            first_received_at=FIXED_NOW,
+            flushed_at=FIXED_NOW,
+        )
+    )
+    assert all(t.tool != "check_available_slots" for t in res.executed_tools)
+    assert "09:00" not in (res.reply_text or "")
+
+    prompt_turn2 = build_system_prompt(
+        tenant,
+        res.lead,
+        stage=ConversationStage.OFFER_CATALOG,
+        now=FIXED_NOW,
+        history=[HumanMessage(content="Vocês tem o king ainda?"), AIMessage(content=res.reply_text or "Temos sim!")],
+    )
+    assert "<role_and_identity>" in prompt_turn2
+    assert "<voice_and_conversation_pacing>" in prompt_turn2
+    assert "<tool_calling_policy>" in prompt_turn2
+    assert "<anti_hallucination_guardrails>" in prompt_turn2
+    assert "<pre_response_self_check>" in prompt_turn2
+    assert "<conversation_memory_and_context>" in prompt_turn2
+    assert "<brazilian_humanizer_writing_rules>" in prompt_turn2
+    assert "ja_cumprimentado_nesta_sessao=sim" in prompt_turn2
+
+
+# =========================================================================== #
+# 7. Humanizer PT-BR, Categorias/Nichos Customizados, Planos e Follow-up
+# =========================================================================== #
+async def test_humanizer_pt_br_custom_niche_plans_and_automatic_followup(
+    store: JsonTenantDataStore,
+    fake_redis,
+):
+    from datetime import timedelta
+    from langchain_core.messages import AIMessage, HumanMessage
+    from src.agent.followup import FollowUpService
+    from src.agent.prompts import build_system_prompt
+    from src.core.schemas import LeadProfile, LeadStatus, Segment, TenantConfig
+    from src.tools.tenant_data import TenantData
+
+    # 1. Limpeza de travessão literário de IA (em-dash) + preservação do negrito nativo
+    raw_ai_text = "Temos **2 opções** King — ambas com entrega grátis — na nossa loja."
+    assert sanitize_whatsapp_formatting(raw_ai_text) == "Temos *2 opções* King, ambas com entrega grátis, na nossa loja."
+
+    # 2. Criação de cliente em categoria específica (ex.: Odontologia / Energia Solar) + Plano + Instruções Customizadas
+    custom_tenant = TenantData(
+        demo_data=False,
+        tenant=TenantConfig(
+            tenant_id="clinica-sorriso",
+            display_name="Clínica Sorriso Prime",
+            segment=Segment.DENTAL,
+            niche_name="Implantes e Lentes de Contato Dental",
+            custom_instructions="Sempre pergunte se o paciente já possui radiografia panorâmica recente.",
+            plan_tier="enterprise",
+            monthly_turn_limit=5000,
+            followup_enabled=True,
+            followup_delay_minutes=60,
+            followup_max_attempts=2,
+        ),
+    )
+    store.save(custom_tenant, create=True)
+
+    lead = LeadProfile(
+        tenant_id="clinica-sorriso",
+        phone="5591988886666",
+        name="Dra. Fernanda",
+        status=LeadStatus.QUALIFIED,
+        last_interaction_at=FIXED_NOW - timedelta(minutes=90),
+    )
+    prompt = build_system_prompt(custom_tenant, lead, now=FIXED_NOW)
+    assert "nicho: `Implantes e Lentes de Contato Dental`" in prompt
+    assert "<tenant_custom_instructions>" in prompt
+    assert "radiografia panorâmica recente" in prompt
+
+    # 3. Teste do motor de Follow-up Automático
+    conv_store = LeadConversationStore(fake_redis)
+    pause_registry = AIPauseRegistry(fake_redis)
+    await conv_store.save(
+        lead,
+        [
+            HumanMessage(content="Oi, gostaria de saber sobre implantes"),
+            AIMessage(content="Olá, Dra. Fernanda! Você já possui radiografia panorâmica recente?"),
+        ],
+    )
+
+    gw = _ReactionRecordingGateway()
+    followup_svc = FollowUpService(
+        store=store,
+        conversation_store=conv_store,
+        pause_registry=pause_registry,
+        gateway_resolver=lambda _p: gw,
+        clock=_fixed_clock,
+    )
+
+    # Disparo real do sweep
+    sweep1 = await followup_svc.run_sweep(tenant_id="clinica-sorriso")
+    assert sweep1["eligible_count"] == 1
+    assert sweep1["sent_count"] == 1
+    assert len(gw.sent_messages) == 1
+    assert "Fernanda" in gw.sent_messages[0]
+    assert "Clínica Sorriso Prime" in gw.sent_messages[0]
+
+    # Segunda execução imediata não reenvia pois last_interaction_at foi atualizado para FIXED_NOW
+    sweep2 = await followup_svc.run_sweep(tenant_id="clinica-sorriso")
+    assert sweep2["sent_count"] == 0
+
+
+# =========================================================================== #
+# 8. Auditoria de Segurança (Security Hardening Regression Suite)
+# =========================================================================== #
+def test_security_audit_hardening_controls(tmp_path):
+    import shutil
+    from fastapi.testclient import TestClient
+    from pydantic import ValidationError
+    from main import create_app
+    from src.config import Settings
+    from src.gateways.astracalls import AstraCallsGateway
+    from src.gateways.waha import WahaGateway
+    from src.tools.tenant_data import GHLTenantConfig
+
+    # 1. Proteção Anti-Exfiltração de Segredos no GHLTenantConfig (Finding 1)
+    with pytest.raises(ValidationError):
+        GHLTenantConfig(token_setting="admin_token", location_setting="ghl_vizzu_location_id")
+    with pytest.raises(ValidationError):
+        GHLTenantConfig(token_setting="openai_api_key", location_setting="ghl_vizzu_location_id")
+    valid_ghl = GHLTenantConfig(token_setting="ghl_vizzu_api_token", location_setting="ghl_vizzu_location_id")
+    assert valid_ghl.token_setting == "ghl_vizzu_api_token"
+
+    # 2. Proteção contra Path Traversal em download_media (Finding 3)
+    assert WahaGateway._is_safe_media_path("/api/files/default/audio.ogg") is True
+    assert WahaGateway._is_safe_media_path("/api/files/../../etc/passwd") is False
+    assert WahaGateway._is_safe_media_path("/api/server/stop") is False
+    assert AstraCallsGateway._is_safe_media_path("/api/sessions/s1/messages/m1/media") is True
+    assert AstraCallsGateway._is_safe_media_path("/api/sessions/../../admin") is False
+
+    # 3. Security Headers, Mascaramento de webhook_secret e Limite de Payload 2MB (Findings 2, 4, 5)
+    tenants_tmp = tmp_path / "tenants"
+    shutil.copytree(PROJECT_ROOT / "data" / "tenants", tenants_tmp)
+    settings = Settings(
+        _env_file=None,
+        environment="development",
+        redis_backend="fake",
+        tenant_data_dir=str(tenants_tmp),
+        sandbox_config_path=str(tmp_path / "sandbox.json"),
+        waha_base_url="https://waha.lobo.test",
+        waha_api_key="waha-test-key",
+    )
+    app = create_app(settings)
+    with TestClient(app) as client:
+        health_res = client.get("/health")
+        assert health_res.status_code == 200
+        assert health_res.headers.get("X-Content-Type-Options") == "nosniff"
+        assert health_res.headers.get("X-Frame-Options") == "DENY"
+        assert "frame-ancestors 'none'" in (health_res.headers.get("Content-Security-Policy") or "")
+
+        # Configura um webhook_secret e verifica se a API mascara o valor na listagem
+        put_res = client.put(
+            "/api/admin/webhooks/loboads",
+            json={
+                "whatsapp_provider": "waha",
+                "whatsapp_session_id": "Danyllo",
+                "webhook_secret": "segredo_super_confidencial_9988",
+            },
+        )
+        assert put_res.status_code == 200
+        put_data = put_res.json()
+        assert put_data["webhook_secret_configured"] is True
+        assert put_data["webhook_secret_masked"] == "••••••••9988"
+        assert "webhook_secret" not in put_data
+
+        # Reenviar a máscara não deve sobrescrever o segredo original no arquivo
+        put_masked = client.put(
+            "/api/admin/webhooks/loboads",
+            json={
+                "whatsapp_provider": "waha",
+                "whatsapp_session_id": "Danyllo",
+                "webhook_secret": "••••••••9988",
+            },
+        )
+        assert put_masked.status_code == 200
+        assert app.state.tenants.get("loboads").tenant.webhook_secret == "segredo_super_confidencial_9988"
+
+        # Restaura webhook_secret = None no loboads para não afetar o arquivo do repo
+        client.put(
+            "/api/admin/webhooks/loboads",
+            json={"whatsapp_provider": "waha", "whatsapp_session_id": None, "webhook_secret": ""},
+        )
+
+        # Payload acima de 2MB no webhook deve retornar HTTP 413
+        oversized = b"x" * (2 * 1024 * 1024 + 100)
+        too_large_res = client.post(
+            "/webhook/loboads/waha",
+            content=oversized,
+            headers={"Content-Type": "application/json"},
+        )
+        assert too_large_res.status_code == 413
+
+
+

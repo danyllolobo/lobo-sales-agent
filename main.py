@@ -32,6 +32,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from src.admin.api import router as admin_router
 from src.admin.control import ConversationControl
 from src.admin.playground import Playground
+from src.agent.followup import FollowUpService
 from src.agent.graph import LeadConversationStore, SalesAgentRunner
 from src.agent.transcription import AudioTranscriber
 from src.buffer.message_queue import FlushHandler, MessageBuffer
@@ -57,6 +58,26 @@ logger = logging.getLogger("lobo")
 APP_VERSION = "0.5.0"
 STATIC_DIR = PROJECT_ROOT / "static"
 ADMIN_INDEX = STATIC_DIR / "admin" / "index.html"
+MAX_WEBHOOK_BODY_BYTES = 2 * 1024 * 1024  # 2 MB (proteção anti-DoS antes do HMAC)
+
+
+async def _read_bounded_body(request: Request, max_bytes: int = MAX_WEBHOOK_BODY_BYTES) -> bytes:
+    """Lê o corpo da requisição com limite estrito de tamanho antes do parse/HMAC."""
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > max_bytes:
+                raise HTTPException(status_code=413, detail="payload excede o limite permitido (2MB)")
+        except ValueError:
+            pass
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(status_code=413, detail="payload excede o limite permitido (2MB)")
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 async def log_batch_handler(batch: MessageBatch) -> None:
@@ -105,8 +126,8 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("Iniciando %s | %s", settings.project_name, settings.safe_summary())
-        # Dados de demonstração (preços fictícios) são proibidos em produção.
-        store = JsonTenantDataStore(settings.tenant_data_dir, allow_demo=not settings.is_production)
+        # Dados de demonstração (preços fictícios) são proibidos em produção, salvo ALLOW_DEMO_DATA=true.
+        store = JsonTenantDataStore(settings.tenant_data_dir, allow_demo=settings.effective_allow_demo)
         redis = await create_redis_client(settings)
         crm_cache: dict[str, CRMConnector | None] = {}
 
@@ -189,6 +210,12 @@ def create_app(
             pause_hours=settings.ai_pause_hours,
         )
         app.state.playground = Playground(store=store, settings=settings, redis=redis, injected_llm=llm)
+        app.state.followup = FollowUpService(
+            store=store,
+            conversation_store=conv_store,
+            pause_registry=pause_registry,
+            gateway_resolver=lambda p: get_gateway_for(app, p),
+        )
 
         try:
             yield
@@ -204,6 +231,16 @@ def create_app(
             logger.info("Encerrando %s", settings.project_name)
 
     app = FastAPI(title=settings.project_name, version=APP_VERSION, lifespan=lifespan)
+
+    @app.middleware("http")
+    async def security_headers_middleware(request: Request, call_next: Any) -> Any:
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault("Content-Security-Policy", "frame-ancestors 'none'")
+        return response
+
     app.mount("/static", StaticFiles(directory=STATIC_DIR, check_dir=False), name="static")
     app.include_router(admin_router)
 
@@ -229,7 +266,7 @@ def create_app(
         except ConfigurationError as exc:
             raise HTTPException(status_code=404, detail=exc.message) from exc
 
-        body = await request.body()
+        body = await _read_bounded_body(request)
         tenant_secret = (tenant.tenant.webhook_secret or "").strip() or None
         if tenant_secret:
             if provider is Provider.WAHA:

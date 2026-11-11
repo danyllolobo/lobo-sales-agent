@@ -94,6 +94,7 @@ class Settings(BaseSettings):
 
     # --- Dados dos tenants & handoff ---
     tenant_data_dir: Path = PROJECT_ROOT / "data" / "tenants"
+    allow_demo_data: bool | None = None
     ai_pause_hours: float = Field(default=24.0, gt=0, le=24 * 30)  # IA silenciada após handoff
 
     # --- Trava de segurança (Sandbox) ---
@@ -193,6 +194,12 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.environment == "production"
+
+    @property
+    def effective_allow_demo(self) -> bool:
+        if self.allow_demo_data is not None:
+            return self.allow_demo_data
+        return not self.is_production
 
     @property
     def async_database_url(self) -> str:

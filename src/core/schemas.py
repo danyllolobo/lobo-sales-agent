@@ -13,7 +13,7 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Annotated, Any, ClassVar
+from typing import Annotated, Any, ClassVar, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import (
@@ -158,10 +158,21 @@ class LeadStatus(StrEnum):
 
 
 class Segment(StrEnum):
-    PSYCHOLOGY = "psychology"  # Vizzu Psicologia
-    MATTRESS = "mattress"  # Companhia dos Sonhos / Vitória Prime
-    POOLS = "pools"  # Splash Piscinas
-    GENERIC = "generic"
+    PSYCHOLOGY = "psychology"  # Clínicas de Psicologia / Saúde Mental (Vizzu)
+    MATTRESS = "mattress"  # Lojas de Colchões / Estofados (Companhia dos Sonhos)
+    POOLS = "pools"  # Piscinas / Lazer / Construção (Splash Piscinas)
+    DENTAL = "dental"  # Clínicas Odontológicas / Harmonização
+    AESTHETICS = "aesthetics"  # Clínicas de Estética / Dermatologia / Spa
+    CLINIC = "clinic"  # Clínicas Médicas / Fisioterapia / Nutrição / Exames
+    REAL_ESTATE = "real_estate"  # Imobiliárias / Construtoras / Corretores
+    AUTOMOTIVE = "automotive"  # Concessionárias / Seminovos / Estética Automotiva
+    EDUCATION = "education"  # Escolas / Faculdades / Cursos / Infoprodutos
+    LAW = "law"  # Escritórios de Advocacia / Consultoria Jurídica
+    RETAIL = "retail"  # Varejo Geral / Móveis / Eletro / Moda / Óticas
+    GENERIC = "generic"  # B2B / Agências / Serviços / Qualquer outro nicho
+
+
+PlanTier = Literal["starter", "pro", "enterprise"]
 
 
 class CRMProvider(StrEnum):
@@ -547,10 +558,13 @@ class LeadProfile(_PhoneMaskedModel):
 _LIST_LINE_RE = re.compile(r"^\s*(?:✅|•|[-*]\s+|\d+[.)]\s+|[1-9]️⃣)")
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 _BROKEN_BOLD_RE = re.compile(r"\*{2,}([^*\n]+?)\*{1,}|\*{1,}([^*\n]+?)\*{2,}")
+_EM_DASH_SURROUNDED_RE = re.compile(r"\s+—\s+")
 
 
 def sanitize_whatsapp_formatting(text: str) -> str:
-    """Converte negritos Markdown (`**texto**` ou `**texto*`) para o padrão nativo do WhatsApp (`*texto*`)."""
+    """Converte negritos Markdown (`**texto**` ou `**texto*`) para o padrão nativo do WhatsApp (`*texto*`)
+    e remove vícios visuais de IA (como travessões literários ` — ` no meio de frases).
+    """
     if not text:
         return ""
 
@@ -558,7 +572,9 @@ def sanitize_whatsapp_formatting(text: str) -> str:
         inner = (match.group(1) or match.group(2) or "").strip()
         return f"*{inner}*" if inner else ""
 
-    return _BROKEN_BOLD_RE.sub(_repl, text)
+    cleaned = _BROKEN_BOLD_RE.sub(_repl, text)
+    cleaned = _EM_DASH_SURROUNDED_RE.sub(", ", cleaned)
+    return cleaned
 
 
 def _is_list_paragraph(para: str) -> bool:
@@ -680,7 +696,8 @@ def split_human_chunks(text: str, max_chars: int = 400, max_chunks: int = 4) -> 
         else:
             expanded_paragraphs.append(para)
 
-    # 2. Agrupa parágrafos de lista consecutivos (`✅`, `•`, `-`) em um ÚNICO bloco indivisível
+    # 2. Agrupa parágrafos de lista consecutivos (`✅`, `•`, `-`) em um ÚNICO bloco indivisível,
+    #    mantendo estritamente a ordem cronológica do texto (NUNCA reordena parágrafos!).
     grouped_paragraphs: list[str] = []
     for para in expanded_paragraphs:
         if _is_list_paragraph(para) and grouped_paragraphs and _is_list_paragraph(grouped_paragraphs[-1]):
@@ -690,28 +707,24 @@ def split_human_chunks(text: str, max_chars: int = 400, max_chunks: int = 4) -> 
 
     has_semantic_list = any(_is_list_paragraph(p) for p in grouped_paragraphs)
     if has_semantic_list and len(grouped_paragraphs) > 1:
-        # Estrutura em até 3 blocos semânticos: [Acolhimento/Intro] + [Lista Completa] + [Fechamento/CTA]
-        pre_list: list[str] = []
-        list_blocks: list[str] = []
-        post_list: list[str] = []
-        seen_list = False
+        # Agrupa parágrafos adjacentes de não-lista mantendo a sequência exata do texto:
+        # Ex.: [Saudação + Intro] -> [Lista Completa de Produtos] -> [Fechamento Consultivo]
+        ordered_segments: list[str] = []
         for para in grouped_paragraphs:
-            if _is_list_paragraph(para):
-                seen_list = True
-                list_blocks.append(para)
-            elif not seen_list:
-                pre_list.append(para)
+            if not ordered_segments:
+                ordered_segments.append(para)
+                continue
+            prev_is_list = _is_list_paragraph(ordered_segments[-1])
+            curr_is_list = _is_list_paragraph(para)
+            if not prev_is_list and not curr_is_list:
+                ordered_segments[-1] = f"{ordered_segments[-1]}\n\n{para}"
             else:
-                post_list.append(para)
+                ordered_segments.append(para)
 
-        semantic_chunks: list[str] = []
-        if pre_list:
-            semantic_chunks.append("\n\n".join(pre_list))
-        if list_blocks:
-            semantic_chunks.append("\n\n".join(list_blocks))
-        if post_list:
-            semantic_chunks.append("\n\n".join(post_list))
-        return semantic_chunks[:max_chunks] if max_chunks >= len(semantic_chunks) else semantic_chunks
+        while len(ordered_segments) > max_chunks:
+            # Se ultrapassar max_chunks, une os dois últimos blocos preservando a ordem
+            ordered_segments[-2:] = [f"{ordered_segments[-2]}\n\n{ordered_segments[-1]}"]
+        return ordered_segments
 
     chunks: list[str] = []
     for para in grouped_paragraphs:
@@ -766,6 +779,19 @@ class TenantConfig(BaseModel):
 
     # Modelo de IA do cliente ("default" usa o padrão global; ou modelo específico)
     llm_model: str = Field(default="gemini-3.8-flash", min_length=1)
+
+    # Personalização livre de nicho/categoria e instruções específicas da empresa
+    niche_name: str | None = None
+    custom_instructions: str | None = None
+
+    # Plano comercial e franquia mensal de atendimentos/turnos
+    plan_tier: PlanTier = "pro"
+    monthly_turn_limit: int | None = Field(default=None, ge=100, le=1_000_000)
+
+    # Configuração de Follow-up Automático para leads inativos (em qualificação)
+    followup_enabled: bool = False
+    followup_delay_minutes: int = Field(default=120, ge=15, le=10080)
+    followup_max_attempts: int = Field(default=1, ge=1, le=5)
 
     # Sobrescrevem os padrões globais de `Settings` quando definidos
     debounce_silence_seconds: float | None = Field(default=None, ge=1.0, le=30.0)

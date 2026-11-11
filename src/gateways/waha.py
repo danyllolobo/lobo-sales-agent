@@ -16,7 +16,7 @@ import json
 import logging
 from collections.abc import Mapping
 from typing import Any, ClassVar
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, unquote, urlsplit
 
 from pydantic import ValidationError
 
@@ -328,6 +328,18 @@ class WahaGateway(WhatsAppGateway):
             mid = dig(resp, "key", "id")
         return str(mid) if mid else None
 
+    @staticmethod
+    def _is_safe_media_path(path: str) -> bool:
+        """Valida caminhos de mídia para impedir Path Traversal (`..`) ou chamada de rotas administrativas."""
+        if not path or not path.startswith("/"):
+            return False
+        decoded = unquote(path)
+        if ".." in decoded or "\\" in decoded or "//" in decoded:
+            return False
+        return decoded.startswith("/api/files/") or (
+            decoded.startswith("/api/") and ("/messages/" in decoded or "/files/" in decoded)
+        )
+
     async def download_media(self, message: IncomingMessage) -> bytes:
         media = message.media
         if media is None:
@@ -341,9 +353,9 @@ class WahaGateway(WhatsAppGateway):
         if isinstance(raw_b64, str) and raw_b64.strip():
             return base64.b64decode(raw_b64.strip().split(",", 1)[-1])
 
-        # Candidatos de download:
-        # 1) media.url reescrita para self.base_url (reescreve localhost / IP interno da VPS)
-        # 2) /api/files/{filename} (se filename estiver presente)
+        # Candidatos de download autenticados na base_url do WAHA (com proteção contra path traversal e SSRF):
+        # 1) media.url reescrita para self.base_url (somente caminhos de mídia seguros)
+        # 2) /api/files/{filename} (se filename estiver presente e sem traversal)
         # 3) /api/{session}/chats/{chatId}/messages/{messageId}/media
         # 4) /api/{session}/chats/{chatId}/messages/{messageId}?downloadMedia=true
         candidates: list[tuple[str, str]] = []
@@ -356,20 +368,18 @@ class WahaGateway(WhatsAppGateway):
 
         if media.url:
             parts = urlsplit(media.url)
-            host = (parts.hostname or "").lower()
             path_q = parts.path + (f"?{parts.query}" if parts.query else "")
-            if host in ("localhost", "127.0.0.1", "::1"):
-                # URL interna do container WAHA → reescreve para a base_url pública
+            if self._is_safe_media_path(parts.path):
                 _add(parts.path, f"{self.base_url}{path_q}")
             else:
-                # URL externa (ex.: MinIO S3 do Easypanel / CDN) → baixa diretamente
-                _add("media.url (direto)", media.url)
-                _add(parts.path, f"{self.base_url}{path_q}")
+                logger.warning("WAHA: caminho de mídia ignorado por segurança: %s", parts.path)
 
         if media.filename:
             clean_fn = media.filename.lstrip("/")
-            fn_path = f"/api/files/{quote(clean_fn, safe='/')}"
-            _add(fn_path, f"{self.base_url}{fn_path}")
+            if ".." not in unquote(clean_fn) and "\\" not in clean_fn:
+                fn_path = f"/api/files/{quote(clean_fn, safe='/')}"
+                if self._is_safe_media_path(fn_path):
+                    _add(fn_path, f"{self.base_url}{fn_path}")
 
         session = quote(message.session_id or self.default_session, safe="")
         chat_id = quote(self.chat_id_for(message.chat_id or message.contact_phone), safe="@.")
@@ -428,13 +438,14 @@ class WahaGateway(WhatsAppGateway):
                 nested_url = obj.get("url") or dig(obj, "media", "url")
                 if isinstance(nested_url, str) and nested_url.strip():
                     parts = urlsplit(nested_url.strip())
-                    path_q = parts.path + (f"?{parts.query}" if parts.query else "")
-                    return await self._request(
-                        "GET",
-                        parts.path,
-                        absolute_url=f"{self.base_url}{path_q}",
-                        headers={"Accept": "*/*"},
-                        expect_json=False,
-                        log_contact=log_contact,
-                    )
+                    if self._is_safe_media_path(parts.path):
+                        path_q = parts.path + (f"?{parts.query}" if parts.query else "")
+                        return await self._request(
+                            "GET",
+                            parts.path,
+                            absolute_url=f"{self.base_url}{path_q}",
+                            headers={"Accept": "*/*"},
+                            expect_json=False,
+                            log_contact=log_contact,
+                        )
         return raw_bytes

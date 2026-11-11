@@ -102,6 +102,20 @@ class WebhookConfigUpdate(BaseModel):
     webhook_secret: str | None = Field(default=None, max_length=256)
 
 
+class FollowUpRunIn(BaseModel):
+    tenant_id: str | None = None
+    dry_run: bool = False
+    force: bool = False
+
+
+def _mask_secret(secret: str | None) -> str | None:
+    if not secret:
+        return None
+    if len(secret) <= 4:
+        return "••••••••"
+    return f"••••••••{secret[-4:]}"
+
+
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
@@ -134,11 +148,19 @@ def _tenant_summary(t: TenantData) -> dict[str, Any]:
         "tenant_id": t.tenant_id,
         "display_name": t.tenant.display_name,
         "segment": t.tenant.segment.value,
+        "niche_name": t.tenant.niche_name,
+        "custom_instructions": t.tenant.custom_instructions,
+        "plan_tier": t.tenant.plan_tier,
+        "monthly_turn_limit": t.tenant.monthly_turn_limit,
+        "followup_enabled": t.tenant.followup_enabled,
+        "followup_delay_minutes": t.tenant.followup_delay_minutes,
+        "followup_max_attempts": t.tenant.followup_max_attempts,
         "active": t.tenant.active,
         "demo_data": t.demo_data,
         "whatsapp_provider": t.tenant.whatsapp_provider.value,
         "whatsapp_session_id": t.tenant.whatsapp_session_id,
-        "webhook_secret": t.tenant.webhook_secret,
+        "webhook_secret_configured": bool(t.tenant.webhook_secret),
+        "webhook_secret_masked": _mask_secret(t.tenant.webhook_secret),
         "crm_provider": t.tenant.crm_provider.value,
         "timezone": t.tenant.timezone,
         "debounce_silence_seconds": t.tenant.debounce_silence_seconds,
@@ -443,7 +465,13 @@ async def webhooks_update(request: Request, tenant_id: TenantId, body: WebhookCo
     if "whatsapp_session_id" in body.model_fields_set:
         t_dict["whatsapp_session_id"] = (body.whatsapp_session_id or "").strip() or None
     if "webhook_secret" in body.model_fields_set:
-        t_dict["webhook_secret"] = (body.webhook_secret or "").strip() or None
+        raw_secret = (body.webhook_secret or "").strip()
+        if not raw_secret:
+            t_dict["webhook_secret"] = None
+        elif raw_secret.startswith("••••"):
+            t_dict["webhook_secret"] = existing.tenant.webhook_secret
+        else:
+            t_dict["webhook_secret"] = raw_secret
     try:
         validated = TenantData.model_validate(payload)
     except ValidationError as exc:
@@ -453,6 +481,17 @@ async def webhooks_update(request: Request, tenant_id: TenantId, body: WebhookCo
         **_tenant_summary(saved),
         "paths": {p: f"/webhook/{saved.tenant_id}/{p}" for p in ("waha", "astracalls")},
     }
+
+
+@router.post("/followup/run")
+async def followup_run(request: Request, body: FollowUpRunIn | None = None) -> dict[str, Any]:
+    st = _state(request)
+    opts = body or FollowUpRunIn()
+    return await st.followup.run_sweep(
+        tenant_id=opts.tenant_id or None,
+        dry_run=opts.dry_run,
+        force=opts.force,
+    )
 
 
 @router.post("/gateway/test-send")

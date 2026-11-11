@@ -6,7 +6,26 @@
   const TOKEN_KEY = "lobo_admin_token";
   const THEME_KEY = "lobo_theme";
   const WEEKDAYS = [["mon", "Seg"], ["tue", "Ter"], ["wed", "Qua"], ["thu", "Qui"], ["fri", "Sex"], ["sat", "Sáb"], ["sun", "Dom"]];
-  const SEGMENTS = ["generic", "mattress", "pools", "psychology"];
+  const SEGMENTS = ["generic", "mattress", "pools", "psychology", "dental", "aesthetics", "clinic", "real_estate", "automotive", "education", "law", "retail"];
+  const SEGMENT_OPTIONS = [
+    ["generic", "Genérico / B2B / Serviços / Agência"],
+    ["mattress", "Loja de Colchões & Estofados"],
+    ["pools", "Piscinas & Lazer"],
+    ["psychology", "Clínica de Psicologia / Saúde Mental"],
+    ["dental", "Odontologia & Harmonização"],
+    ["aesthetics", "Estética / Dermatologia / Spa"],
+    ["clinic", "Clínica Médica / Fisioterapia / Exames"],
+    ["real_estate", "Imobiliária / Construtora / Corretores"],
+    ["automotive", "Concessionária / Seminovos / Automotivo"],
+    ["education", "Educação / Cursos / Infoprodutos"],
+    ["law", "Escritório de Advocacia / Jurídico"],
+    ["retail", "Varejo Geral / Móveis / Moda / Ótica"],
+  ];
+  const PLAN_OPTIONS = [
+    ["starter", "Plano Starter (SDR Essencial — Gemini Flash)"],
+    ["pro", "Plano Growth / Pro (SDR + Closer + Agenda + CRM)"],
+    ["enterprise", "Plano Scale / Enterprise (Multi-Sessão + Gemini Pro + Follow-up)"],
+  ];
   const LLM_MODELS = ["default", "gemini-3.8-flash", "gemini-2.5-pro", "gemini-3-pro", "gemini-4-argon", "gpt-4o", "gpt-4o-mini"];
   const LLM_MODEL_OPTIONS = [
     ["default", "Padrão do Sistema (Global)"],
@@ -796,13 +815,22 @@
         <div class="form-grid cols-4">
           ${field("tenant_id", `<input value="${esc(t.tenant_id)}" disabled>`)}
           ${field("Nome de exibição", inp("tenant.display_name"), "span-2")}
-          ${field("Segmento", sel("tenant.segment", SEGMENTS))}
+          ${field("Segmento / Categoria", selPairs("tenant.segment", SEGMENT_OPTIONS))}
+          ${field("Nicho / Especialidade Livre", inp("tenant.niche_name", "str?", 'placeholder="ex.: Energia Solar, implantes, móveis planejados"'), "span-2")}
+          ${field("Plano Comercial", selPairs("tenant.plan_tier", PLAN_OPTIONS))}
+          ${field("Franquia mensal (turnos IA)", inp("tenant.monthly_turn_limit", "int?", 'type="number" min="100" placeholder="ilimitado"'))}
           ${field("Fuso horário", inp("tenant.timezone", "str", 'placeholder="America/Belem"'))}
           ${field("Provedor WhatsApp", sel("tenant.whatsapp_provider", ["waha", "astracalls"]))}
           ${field("Sessão WhatsApp", inp("tenant.whatsapp_session_id", "str?", 'placeholder="ex.: Danyllo"'))}
           ${field("CRM", sel("tenant.crm_provider", ["chatwoot", "ghl", "none"], 'data-act="crm-provider"'))}
           ${field("Modelo de IA", selPairs("tenant.llm_model", LLM_MODEL_OPTIONS), "span-2")}
           ${field("Chave HMAC / Secret do Webhook", inp("tenant.webhook_secret", "str?", 'placeholder="opcional (sobrescreve .env)"'), "span-2")}
+          ${field("Follow-up após inatividade (min)", inp("tenant.followup_delay_minutes", "int", 'type="number" min="15" max="10080"'))}
+          ${field("Máx. tentativas de Follow-up", inp("tenant.followup_max_attempts", "int", 'type="number" min="1" max="5"'))}
+          <label class="field span-2">
+            <span>Instruções Específicas da Empresa (Prompt Customizado do Nicho)</span>
+            <textarea data-path="tenant.custom_instructions" data-type="str?" rows="2" placeholder="Regras extras de atendimento, diferenciais ou perguntas específicas desta empresa…">${esc(val("tenant.custom_instructions") || "")}</textarea>
+          </label>
           <label class="field span-2">
             <span>⏱️ Silêncio para fechar o lote (debounce): <strong id="tn-silence-val" class="mono">${esc(t.debounce_silence_seconds ?? S.overview?.debounce?.silence_seconds ?? 8)}s</strong></span>
             <input type="range" data-path="tenant.debounce_silence_seconds" data-type="num?" min="2" max="30" step="1" value="${esc(t.debounce_silence_seconds ?? S.overview?.debounce?.silence_seconds ?? 8)}">
@@ -812,7 +840,7 @@
             <input type="range" data-path="tenant.debounce_max_window_seconds" data-type="num?" min="5" max="60" step="1" value="${esc(t.debounce_max_window_seconds ?? S.overview?.debounce?.max_window_seconds ?? 20)}">
           </label>
         </div>
-        <div class="chips" style="margin-top:12px">${chk("tenant.active", "Cliente ativo (webhook atende)")}${chk("tenant.split_messages", "Ativar Envio Humanizado em Partes (picotar mensagens longas)")}${chk("demo_data", "Dados de demonstração (demo_data) — bloqueados em produção")}</div>
+        <div class="chips" style="margin-top:12px">${chk("tenant.active", "Cliente ativo (webhook atende)")}${chk("tenant.split_messages", "Ativar Envio Humanizado em Partes (picotar mensagens longas)")}${chk("tenant.followup_enabled", "Ativar Follow-up Automático para leads inativos")}${chk("demo_data", "Dados de demonstração (demo_data) — bloqueados em produção")}</div>
         <div class="divider"></div>
         <h3>🔌 CRM (${esc(t.crm_provider)})</h3>
         ${crmBlock}
@@ -1067,6 +1095,8 @@
         tenant_id: F(f, "tenant_id").value.trim().toLowerCase(),
         display_name: F(f, "display_name").value.trim(),
         segment: F(f, "segment").value,
+        niche_name: F(f, "niche_name")?.value.trim() || null,
+        plan_tier: F(f, "plan_tier")?.value || "pro",
         timezone: F(f, "timezone").value.trim() || "America/Belem",
         whatsapp_provider: "waha",
         crm_provider: "none",
@@ -1169,7 +1199,7 @@
         <td style="min-width:260px">${urlCell(t.paths.astracalls)}</td>
         <td style="min-width:230px">
           <div class="row-between" style="gap:6px">
-            <input data-wh="secret" type="password" value="${esc(t.webhook_secret || "")}" placeholder="HMAC Secret (opcional)">
+            <input data-wh="secret" type="password" value="${esc(t.webhook_secret_masked || "")}" placeholder="HMAC Secret (opcional)">
             <button class="btn btn-primary btn-sm" data-save-wh="${esc(t.tenant_id)}">💾 Salvar</button>
           </div>
         </td>

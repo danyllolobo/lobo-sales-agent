@@ -200,8 +200,8 @@ class ChatwootTenantConfig(_Strict):
 
 
 class GHLTenantConfig(_Strict):
-    token_setting: str = Field(pattern=r"^[a-z0-9_]+$")  # nome do campo em Settings
-    location_setting: str = Field(default="ghl_vizzu_location_id", pattern=r"^[a-z0-9_]+$")
+    token_setting: str = Field(pattern=r"^ghl_[a-z0-9_]*_token$")  # somente campos GHL em Settings (anti-exfiltração)
+    location_setting: str = Field(default="ghl_vizzu_location_id", pattern=r"^ghl_[a-z0-9_]*_location_id$")
     location_id: str | None = None
     handoff_user_id: str | None = None
 

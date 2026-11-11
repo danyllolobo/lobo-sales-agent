@@ -49,6 +49,16 @@ def create_crm(
         cfg_ghl = tenant.crm.ghl
         if cfg_ghl is None:
             raise ConfigurationError("GHL não configurado para o tenant", tenant_id=tenant.tenant_id)
+        if not (cfg_ghl.token_setting.startswith("ghl_") and cfg_ghl.token_setting.endswith("_token")):
+            raise ConfigurationError(
+                "GHL: token_setting inválido (deve seguir o padrão ghl_*_token)",
+                tenant_id=tenant.tenant_id,
+            )
+        if not (cfg_ghl.location_setting.startswith("ghl_") and cfg_ghl.location_setting.endswith("_location_id")):
+            raise ConfigurationError(
+                "GHL: location_setting inválido (deve seguir o padrão ghl_*_location_id)",
+                tenant_id=tenant.tenant_id,
+            )
         token = getattr(settings, cfg_ghl.token_setting, None)
         location = getattr(settings, cfg_ghl.location_setting, None) or cfg_ghl.location_id
         if not isinstance(token, SecretStr) or not location:

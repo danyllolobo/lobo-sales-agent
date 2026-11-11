@@ -9,6 +9,10 @@
     "timezone": "America/Belem",
     "active": true,
     "llm_model": "gemini-3.8-flash",
+    "plan_tier": "pro",
+    "followup_enabled": false,
+    "followup_delay_minutes": 120,
+    "followup_max_attempts": 1,
     "split_messages": true
   },
   "business_info": {
@@ -128,7 +132,7 @@
         "item_id": "CS-ENS-KING",
         "name": "Colchão Molas Ensacadas Prime King",
         "category": "colchao",
-        "description": "Molas ensacadas individualmente com pillow top.",
+        "description": "Molas ensacadas individualmente com pillow top de alta maciez e amplo espaço King Size.",
         "attributes": {
           "tamanho": "king",
           "medidas": "193x203x30 cm",
@@ -138,17 +142,62 @@
         "tags": [
           "molas ensacadas",
           "pillow top",
-          "coluna"
+          "coluna",
+          "king"
         ],
         "price": {
           "amount": "4299.00",
+          "cash_amount": "4084.05",
+          "max_installments": 10,
+          "interest_free": true,
+          "updated_at": "2026-11-01T09:00:00-03:00"
+        },
+        "variants": [
+          {
+            "code": "com-box",
+            "name": "Conjunto King com cama box bipartida",
+            "price": {
+              "amount": "5299.00",
+              "cash_amount": "5034.05",
+              "max_installments": 10,
+              "interest_free": true,
+              "updated_at": "2026-11-01T09:00:00-03:00"
+            },
+            "in_stock": true
+          }
+        ],
+        "featured": false,
+        "in_stock": true,
+        "active": true
+      },
+      {
+        "item_id": "CS-ORT-KING",
+        "name": "Colchão Ortopédico D45 Premium King",
+        "category": "colchao",
+        "description": "Espuma D45 certificada com suporte ortopédico firme e tampo em malha bordada no tamanho King.",
+        "attributes": {
+          "tamanho": "king",
+          "medidas": "193x203x28 cm",
+          "firmeza": "firme",
+          "tecnologia": "espuma ortopédica"
+        },
+        "tags": [
+          "ortopedico",
+          "espuma",
+          "firme",
+          "coluna",
+          "king"
+        ],
+        "price": {
+          "amount": "3699.00",
+          "cash_amount": "3514.05",
           "max_installments": 10,
           "interest_free": true,
           "updated_at": "2026-11-01T09:00:00-03:00"
         },
         "variants": [],
         "featured": false,
-        "in_stock": false,
+        "in_stock": true,
         "active": true
       },
       {

@@ -44,6 +44,8 @@ _UFS = frozenset(
     "ac al ap am ba ce df es go ma mt ms mg pa pb pr pe pi rj rn rs ro rr sc sp se to".split()
 )
 
+_KNOWN_SIZES = frozenset({"solteiro", "casal", "queen", "king"})
+
 # Inteligência Geográfica Local: Bairros de Belém e Região Metropolitana (Ananindeua) -> (Nome Exibição, Cidade-Mãe)
 BELEM_METROPOLITAN_NEIGHBORHOODS: dict[str, tuple[str, str]] = {
     "tapana": ("Tapanã", "Belém"),
@@ -109,7 +111,9 @@ def resolve_metropolitan_neighborhood(raw_text: str) -> tuple[str, str] | None:
 
 PRICE_SHOW_INSTRUCTION = (
     "Use EXATAMENTE os valores formatados retornados (campos *_formatted). "
-    "Não arredonde, não some, não ofereça descontos além do retornado."
+    "Não arredonde, não some, não ofereça descontos além do retornado. "
+    "Apresente SOMENTE os modelos retornados que correspondem ao tamanho solicitado pelo cliente e estão em estoque (in_stock=True). "
+    "NUNCA ofereça tamanho diferente do pedido (ex.: não envie Queen se o cliente pediu King) e NUNCA invente avisos de 'última unidade vendida' ou 'encomenda de fábrica'."
 )
 
 FEATURED_FALLBACK_INSTRUCTION = (
@@ -236,6 +240,7 @@ class CatalogService:
         synonyms = _synonym_map(catalog)
         terms = _expand(tokens, synonyms)
         wanted_category = normalize_text(category) if category else None
+        requested_sizes = terms & _KNOWN_SIZES
 
         ranked: list[tuple[int, CatalogItem]] = []
         if terms or wanted_category:
@@ -244,9 +249,17 @@ class CatalogService:
                     continue
                 if wanted_category and normalize_text(item.category) != wanted_category:
                     continue
+                if requested_sizes:
+                    item_size = normalize_text(item.attributes.get("tamanho", ""))
+                    if item_size in _KNOWN_SIZES and item_size not in requested_sizes:
+                        continue
                 score = score_item(item, terms, synonyms) if terms else 1
                 if score > 0:
                     ranked.append((score, item))
+            # Se o cliente pediu um tamanho específico e existem itens em estoque desse tamanho,
+            # remove itens sem estoque para o agente jamais enviar produto esgotado contraditório.
+            if requested_sizes and any(it.in_stock for _, it in ranked):
+                ranked = [(sc, it) for sc, it in ranked if it.in_stock]
             # Ordem determinística: relevância ↓, em estoque primeiro, item_id ↑
             ranked.sort(key=lambda p: (-p[0], not p[1].in_stock, p[1].item_id))
 

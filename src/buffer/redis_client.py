@@ -64,7 +64,7 @@ async def create_redis_client(
         return client
     except (RedisError, OSError) as exc:
         await client.aclose()
-        if backend == "auto" and not settings.is_production:
+        if backend == "auto" and (not settings.is_production or settings.allow_demo_data is True):
             logger.warning(
                 "Redis indisponível em %s (%s). Caindo para fakeredis em memória (ambiente=%s).",
                 _redact_url(settings.redis_url),

@@ -178,6 +178,7 @@ def build_tenant_tools(
     calendar: CalendarService,
     handoff: HandoffService,
     recorded_results: list[ToolResult],
+    include_calendar_tools: bool = True,
 ) -> list[StructuredTool]:
     """Cria as ferramentas LangChain vinculadas de forma imutável ao `tenant_id` e `lead` do turno."""
 
@@ -262,7 +263,7 @@ def build_tenant_tools(
         recorded_results.append(res)
         return res.to_llm_payload()
 
-    return [
+    tools: list[StructuredTool] = [
         StructuredTool.from_function(
             coroutine=_search_catalog,
             name="search_catalog",
@@ -299,23 +300,31 @@ def build_tenant_tools(
             ),
             args_schema=_BusinessInfoArgs,
         ),
-        StructuredTool.from_function(
-            coroutine=_check_available_slots,
-            name="check_available_slots",
-            description=(
-                "Verifica horários disponíveis na agenda do tenant a partir de uma data (AAAA-MM-DD), "
-                "retornando sempre 2 sugestões concretas em 'suggestions'."
-            ),
-            args_schema=_CheckAvailableSlotsArgs,
-        ),
-        StructuredTool.from_function(
-            coroutine=_create_booking,
-            name="create_booking",
-            description=(
-                "Confirma e grava um agendamento para o cliente no horário ISO escolhido (slot_datetime)."
-            ),
-            args_schema=_CreateBookingArgs,
-        ),
+    ]
+    if include_calendar_tools:
+        tools.extend(
+            [
+                StructuredTool.from_function(
+                    coroutine=_check_available_slots,
+                    name="check_available_slots",
+                    description=(
+                        "Verifica horários disponíveis na agenda do tenant a partir de uma data (AAAA-MM-DD), "
+                        "retornando sempre 2 sugestões concretas em 'suggestions'. USE SOMENTE quando o cliente "
+                        "pedir para agendar visita/consulta ou perguntar horários livres; NUNCA chame em dúvidas de catálogo ou preço."
+                    ),
+                    args_schema=_CheckAvailableSlotsArgs,
+                ),
+                StructuredTool.from_function(
+                    coroutine=_create_booking,
+                    name="create_booking",
+                    description=(
+                        "Confirma e grava um agendamento para o cliente no horário ISO escolhido (slot_datetime)."
+                    ),
+                    args_schema=_CreateBookingArgs,
+                ),
+            ]
+        )
+    tools.append(
         StructuredTool.from_function(
             coroutine=_trigger_human_handoff,
             name="trigger_human_handoff",
@@ -324,8 +333,9 @@ def build_tenant_tools(
                 "privada no CRM e pausando a IA."
             ),
             args_schema=_TriggerHandoffArgs,
-        ),
-    ]
+        )
+    )
+    return tools
 
 
 # --------------------------------------------------------------------------- #
@@ -539,26 +549,26 @@ class DeterministicSalesChatModel(BaseChatModel):
         if self._is_price_objection(norm):
             if "segmento: `psychology`" in sys_text:
                 return (
-                    "Compreendo perfeitamente o seu ponto! 😊 Cuidar da saúde emocional é um investimento "
-                    "direto na sua qualidade de vida e bem-estar a longo prazo.\n\n"
-                    "Aqui na Vizzu, além de contarmos com especialistas dedicados e **emissão de recibo para reembolso "
-                    "no plano de saúde**, temos a opção do **pacote mensal** que reduz o valor por sessão e parcelamento "
+                    "Te entendo! 😊 Cuidar da saúde emocional é um investimento "
+                    "direto na sua qualidade de vida e bem-estar.\n\n"
+                    "Aqui na Vizzu, contamos com especialistas dedicados, **emissão de recibo para reembolso "
+                    "no plano de saúde** e a opção do **pacote mensal**, que reduz o valor por sessão com parcelamento "
                     "facilitado. Prefere que eu te explique como funciona o pacote mensal ou o reembolso?"
                 )
             if "segmento: `pools`" in sys_text:
                 return (
-                    "Entendo perfeitamente! 😊 Uma piscina de fibra da Splash é um patrimônio com **alta durabilidade**, "
-                    "**5 anos de garantia estrutural**, valorização imediata do seu imóvel e lazer para toda a família.\n\n"
-                    "Além disso, temos **entrega grátis** na Região Metropolitana e parcelamento facilitado em até "
+                    "Te entendo! 😊 Uma piscina de fibra da Splash é um patrimônio com **alta durabilidade**, "
+                    "**5 anos de garantia estrutural**, valorização do seu imóvel e lazer para toda a família.\n\n"
+                    "Contamos também com **entrega grátis** na Região Metropolitana e parcelamento facilitado em até "
                     "**10x sem juros** (ou em até 12x no cartão). Quer que eu simule uma condição parcelada que fique "
                     "confortável no seu planejamento?"
                 )
             return (
-                "Entendo perfeitamente o seu ponto! 😊 Um colchão de qualidade é um investimento diário na "
+                "Te entendo! 😊 Um colchão de qualidade faz diferença todo dia na "
                 "**saúde da sua coluna** e no seu descanso, com **alta durabilidade** para muitos anos de uso e "
                 "**3 anos de garantia de fábrica**.\n\n"
-                "Para ficar bem leve no seu orçamento, você conta com **entrega grátis** na Região Metropolitana "
-                "e facilidade de pagamento em até **10x sem juros** no cartão (ou desconto especial à vista no PIX). "
+                "Para caber tranquilo no orçamento, você conta com **entrega grátis** na Região Metropolitana "
+                "e parcelamento em até **10x sem juros** no cartão (ou desconto especial à vista no PIX). "
                 "Prefere aproveitar o parcelamento em **10x sem juros** ou quer conhecer também nossa linha de espuma "
                 "de alta densidade com excelente custo-benefício?"
             )
@@ -629,7 +639,7 @@ class DeterministicSalesChatModel(BaseChatModel):
                 )
             return (
                 f"Opa{f', {lead_name}' if lead_name else ''}! Tudo bom? Seja muito bem-vindo(a) à Companhia dos Sonhos! 😊 "
-                "Show de bola, temos vários modelos maravilhosos aqui na nossa loja da *Tavares Bastos (Marambaia)*!\n\n"
+                "Show de bola, temos vários modelos a pronta-entrega aqui na nossa loja da *Tavares Bastos (Marambaia)*!\n\n"
                 "Para eu separar as melhores opções para você: qual *medida* você procura (solteiro, casal, queen ou king) "
                 "e você prefere um colchão mais *firme para a coluna* ou mais *macio com molas ensacadas*?"
             )
@@ -730,7 +740,7 @@ class DeterministicSalesChatModel(BaseChatModel):
             if "segmento: `mattress`" in sys_text:
                 greeting = (
                     f"Opa{f', {lead_name}' if lead_name else ''}! Tudo bom? Seja muito bem-vindo(a) à Companhia dos Sonhos! 😊 "
-                    "Show de bola, temos vários modelos maravilhosos aqui na nossa loja da *Tavares Bastos (Marambaia)*!"
+                    "Show de bola, temos vários modelos a pronta-entrega aqui na nossa loja da *Tavares Bastos (Marambaia)*!"
                 )
             else:
                 greeting = (
@@ -749,15 +759,25 @@ class DeterministicSalesChatModel(BaseChatModel):
             tool_name = p.get("tool")
             data = p.get("data") or {}
             if tool_name == "search_catalog" and p.get("status") == "ok":
-                results = data.get("results") or []
+                raw_results = data.get("results") or []
+                in_stock_only = [r for r in raw_results if r.get("in_stock", True)]
+                results = in_stock_only if in_stock_only else raw_results
                 is_featured_fallback = bool(data.get("featured_fallback"))
                 is_multi_highlight = is_featured_fallback or any(
                     k in norm
-                    for k in ("outros modelos", "outro modelo", "quais modelos", "quais as opcoes", "quais opcoes", "o que voces tem")
+                    for k in (
+                        "outros modelos",
+                        "outro modelo",
+                        "quais modelos",
+                        "modelos",
+                        "quais as opcoes",
+                        "quais opcoes",
+                        "o que voces tem",
+                    )
                 )
                 if results and is_multi_highlight and len(results) >= 2:
                     presented_featured_highlights = True
-                    parts.append("Temos opções incríveis aqui na loja! Dá uma olhadinha nos nossos principais destaques:")
+                    parts.append("Separei as principais opções a pronta-entrega aqui da loja:")
                     highlights: list[str] = []
                     for item in results[:3]:
                         i_name = item.get("name", "Produto")
@@ -892,10 +912,21 @@ class DeterministicSalesChatModel(BaseChatModel):
                     "Para eu te indicar o plano ideal: qual é o seu *segmento* e o seu principal objetivo comercial hoje?"
                 )
             else:
-                parts.append(
-                    "Para eu te indicar o modelo perfeito para o seu descanso: qual *medida* você precisa "
-                    "(solteiro, casal, queen ou king) e qual a sua preferência de *conforto* (mais firme para a coluna ou mais macio com molas ensacadas)?"
+                has_known_size = any(
+                    s in norm or f"tamanho={s}" in sys_text
+                    for s in ("solteiro", "casal", "queen", "king")
                 )
+                if has_known_size and not is_featured_fallback:
+                    parts.append(
+                        "Qual desses modelos faz mais sentido para o seu gosto: o de *molas ensacadas com pillow top* "
+                        "ou o *ortopédico mais firme*? Se quiser, você pode dar uma passada aqui na nossa loja da "
+                        "*Av. Tavares Bastos, 1246F (Marambaia)* para testar pessoalmente ou já garantimos o seu com *entrega grátis*!"
+                    )
+                else:
+                    parts.append(
+                        "Para eu te indicar o modelo perfeito para o seu descanso: qual *medida* você precisa "
+                        "(solteiro, casal, queen ou king) e qual a sua preferência de *conforto* (mais firme para a coluna ou mais macio com molas ensacadas)?"
+                    )
         elif not any(p.get("tool") in ("check_available_slots", "create_booking") for p in payloads):
             if "segmento: `generic`" in sys_text:
                 parts.append("Quer agendar uma reunião rápida de diagnóstico para montarmos o plano ideal para você?")
@@ -935,6 +966,44 @@ def _extract_ai_text(content: Any) -> str:
                 chunks.append(str(part.get("text", "")))
         return "\n".join(chunks).strip()
     return str(content or "").strip()
+
+
+_SCHEDULING_SIGNAL_KEYWORDS: tuple[str, ...] = (
+    "agendar",
+    "agendamento",
+    "marcar",
+    "horario",
+    "horarios",
+    "agenda",
+    "visita",
+    "visitar",
+    "ir na loja",
+    "passar na loja",
+    "conhecer a loja",
+    "consulta",
+    "sessao",
+    "avaliacao",
+    "amanha",
+    "hoje",
+    "segunda",
+    "terca",
+    "quarta",
+    "quinta",
+    "sexta",
+    "sabado",
+    "reservar",
+    "confirmo",
+)
+
+
+def _has_scheduling_signal(user_text: str) -> bool:
+    """Retorna True apenas se a mensagem do cliente contiver intenção ou referência a agendamento/visita/datas."""
+    if not user_text:
+        return False
+    if _ISO_SLOT_RE.search(user_text) or _ISO_DATE_RE.search(user_text):
+        return True
+    norm = f" {normalize_text(user_text)} "
+    return any(k in norm for k in _SCHEDULING_SIGNAL_KEYWORDS)
 
 
 def _extract_last_user_text(state: AgentState) -> str:
@@ -1105,6 +1174,7 @@ class AgentNodes:
         user_text = _extract_last_user_text(state)
 
         recorded_results: list[ToolResult] = []
+        allow_calendar_tools = stage == ConversationStage.BOOKING or _has_scheduling_signal(user_text)
         bound_tools = build_tenant_tools(
             tenant_id=tenant_id,
             lead=lead,
@@ -1112,11 +1182,19 @@ class AgentNodes:
             calendar=self._calendar,
             handoff=self._handoff,
             recorded_results=recorded_results,
+            include_calendar_tools=allow_calendar_tools,
         )
         tools_by_name = {t.name: t for t in bound_tools}
 
-        system_prompt = build_system_prompt(tenant, lead, stage=stage, now=self._clock())
         history = list(state.get("messages") or [])
+        prior_history = history[:-1] if history and isinstance(history[-1], HumanMessage) else history
+        system_prompt = build_system_prompt(
+            tenant,
+            lead,
+            stage=stage,
+            now=self._clock(),
+            history=prior_history,
+        )
         if not history or not isinstance(history[-1], HumanMessage):
             if user_text:
                 history.append(HumanMessage(content=user_text))
