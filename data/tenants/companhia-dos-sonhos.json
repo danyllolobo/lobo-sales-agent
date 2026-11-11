@@ -1,0 +1,100 @@
+{
+  "demo_data": true,
+  "tenant": {
+    "tenant_id": "companhia-dos-sonhos",
+    "display_name": "Companhia dos Sonhos",
+    "segment": "mattress",
+    "whatsapp_provider": "astracalls",
+    "crm_provider": "chatwoot",
+    "timezone": "America/Belem"
+  },
+  "business_info": {
+    "hours": "[DEMO] Segunda a sexta, das 9h às 18h; sábados, das 9h às 13h.",
+    "location": "[DEMO] Av. Exemplo, 1000 - Belém/PA (loja com showroom e estacionamento).",
+    "warranty": "[DEMO] Garantia de fábrica de 3 anos contra defeitos de fabricação em todos os colchões.",
+    "payment_methods": "[DEMO] Pix, cartão de crédito em até 10x sem juros e débito."
+  },
+  "catalog": {
+    "price_max_age_days": 365,
+    "synonyms": {
+      "molas ensacadas": ["pocket", "molas pocket", "mola ensacada", "molas individuais"],
+      "casal": ["138x188", "duplo", "padrao casal"],
+      "queen": ["158x198", "queen size"],
+      "king": ["193x203", "king size"],
+      "solteiro": ["88x188", "individual"],
+      "espuma": ["d33", "d28", "d45"],
+      "coluna": ["dor nas costas", "lombar", "postura"]
+    },
+    "items": [
+      {
+        "item_id": "CS-ENS-CASAL",
+        "name": "Colchão Molas Ensacadas Prime Casal",
+        "category": "colchao",
+        "description": "Molas ensacadas individualmente com pillow top, ideal para quem divide a cama.",
+        "attributes": {"tamanho": "casal", "medidas": "138x188x30 cm", "firmeza": "média-firme", "tecnologia": "molas ensacadas"},
+        "tags": ["molas ensacadas", "pillow top", "coluna"],
+        "price": {"amount": "2899.00", "cash_amount": "2754.05", "max_installments": 10, "updated_at": "2026-11-01T09:00:00-03:00"},
+        "variants": [
+          {"code": "com-box", "name": "Conjunto com cama box", "price": {"amount": "3699.00", "max_installments": 10, "updated_at": "2026-11-01T09:00:00-03:00"}}
+        ]
+      },
+      {
+        "item_id": "CS-ENS-QUEEN",
+        "name": "Colchão Molas Ensacadas Prime Queen",
+        "category": "colchao",
+        "description": "Molas ensacadas individualmente com pillow top.",
+        "attributes": {"tamanho": "queen", "medidas": "158x198x30 cm", "firmeza": "média-firme", "tecnologia": "molas ensacadas"},
+        "tags": ["molas ensacadas", "pillow top", "coluna"],
+        "price": {"amount": "3499.00", "cash_amount": "3324.05", "max_installments": 10, "updated_at": "2026-11-01T09:00:00-03:00"}
+      },
+      {
+        "item_id": "CS-ENS-KING",
+        "name": "Colchão Molas Ensacadas Prime King",
+        "category": "colchao",
+        "description": "Molas ensacadas individualmente com pillow top.",
+        "attributes": {"tamanho": "king", "medidas": "193x203x30 cm", "firmeza": "média-firme", "tecnologia": "molas ensacadas"},
+        "tags": ["molas ensacadas", "pillow top", "coluna"],
+        "price": {"amount": "4299.00", "max_installments": 10, "updated_at": "2026-11-01T09:00:00-03:00"},
+        "in_stock": false
+      },
+      {
+        "item_id": "CS-ESP-CASAL",
+        "name": "Colchão Espuma D33 Casal",
+        "category": "colchao",
+        "description": "Espuma de alta densidade, firme, boa opção custo-benefício.",
+        "attributes": {"tamanho": "casal", "medidas": "138x188x20 cm", "firmeza": "firme", "tecnologia": "espuma"},
+        "tags": ["espuma", "firme"],
+        "price": {"amount": "1299.00", "max_installments": 6, "updated_at": "2026-11-01T09:00:00-03:00"}
+      },
+      {
+        "item_id": "CS-ORT-SOLT",
+        "name": "Colchão Ortopédico Solteiro",
+        "category": "colchao",
+        "description": "Ortopédico, extra firme, indicado para quem sente dores na coluna.",
+        "attributes": {"tamanho": "solteiro", "medidas": "88x188x18 cm", "firmeza": "extra firme", "tecnologia": "espuma ortopédica"},
+        "tags": ["ortopedico", "coluna", "firme"],
+        "price": {"amount": "899.00", "max_installments": 5, "updated_at": "2026-11-01T09:00:00-03:00"}
+      }
+    ]
+  },
+  "delivery": {
+    "zones": [
+      {"cities": ["Belém", "Ananindeua", "Marituba"], "fee": "0.00", "lead_time_days_min": 1, "lead_time_days_max": 2, "notes": "Entrega grátis na Região Metropolitana."},
+      {"cities": ["Benevides", "Santa Bárbara do Pará"], "fee": "50.00", "lead_time_days_min": 2, "lead_time_days_max": 3},
+      {"cities": ["Castanhal"], "fee": "90.00", "lead_time_days_min": 3, "lead_time_days_max": 5}
+    ]
+  },
+  "calendar": {
+    "services": [
+      {"service_id": "visita_loja", "name": "Visita ao showroom com consultor do sono", "duration_minutes": 30, "capacity": 3}
+    ],
+    "working_hours": {"mon": ["09:00-18:00"], "tue": ["09:00-18:00"], "wed": ["09:00-18:00"], "thu": ["09:00-18:00"], "fri": ["09:00-18:00"], "sat": ["09:00-13:00"]},
+    "slot_step_minutes": 30,
+    "min_notice_minutes": 60,
+    "horizon_days": 14
+  },
+  "crm": {
+    "chatwoot": {"account_id": 8, "inbox_id": null, "assignee_means_human": false}
+  }
+}
+

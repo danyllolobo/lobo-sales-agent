@@ -1,0 +1,83 @@
+{
+  "demo_data": true,
+  "tenant": {
+    "tenant_id": "splash-piscinas",
+    "display_name": "Splash Piscinas",
+    "segment": "pools",
+    "whatsapp_provider": "astracalls",
+    "crm_provider": "chatwoot",
+    "timezone": "America/Belem"
+  },
+  "business_info": {
+    "hours": "[DEMO] Segunda a sexta, das 8h às 17h; sábados, das 8h às 12h.",
+    "location": "[DEMO] Rod. Exemplo, km 5 - Ananindeua/PA (showroom com piscinas expostas).",
+    "warranty": "[DEMO] Garantia de 5 anos na estrutura da piscina de fibra e 1 ano na instalação.",
+    "payment_methods": "[DEMO] Pix, boleto, cartão em até 12x e financiamento sujeito a análise."
+  },
+  "catalog": {
+    "price_max_age_days": 365,
+    "synonyms": {
+      "fibra": ["piscina de fibra", "fibra de vidro"],
+      "pequena": ["6x3", "6 x 3", "6 metro"],
+      "media": ["7x3", "7 metro"],
+      "grande": ["8x4", "8 metro"],
+      "aquecedor": ["aquecimento", "aquecer", "agua quente"]
+    },
+    "items": [
+      {
+        "item_id": "SP-FIB-600",
+        "name": "Piscina de Fibra 6,00 x 3,00 x 1,40 m",
+        "category": "piscina",
+        "description": "Ideal para quintais médios. Kit com piscina, filtro e bomba.",
+        "attributes": {"medidas": "6,00 x 3,00 x 1,40 m", "material": "fibra", "porte": "pequena"},
+        "tags": ["fibra", "kit completo"],
+        "price": {"amount": "18900.00", "max_installments": 12, "updated_at": "2026-11-01T09:00:00-03:00", "note": "Valor do kit. Escavação e instalação são orçadas na visita técnica."}
+      },
+      {
+        "item_id": "SP-FIB-700",
+        "name": "Piscina de Fibra 7,00 x 3,50 x 1,40 m",
+        "category": "piscina",
+        "description": "Tamanho família. Kit com piscina, filtro e bomba.",
+        "attributes": {"medidas": "7,00 x 3,50 x 1,40 m", "material": "fibra", "porte": "media"},
+        "tags": ["fibra", "kit completo"],
+        "price": {"amount": "23900.00", "max_installments": 12, "updated_at": "2026-11-01T09:00:00-03:00", "note": "Valor do kit. Escavação e instalação são orçadas na visita técnica."}
+      },
+      {
+        "item_id": "SP-FIB-800",
+        "name": "Piscina de Fibra 8,00 x 4,00 x 1,40 m",
+        "category": "piscina",
+        "description": "Para áreas amplas. Kit com piscina, filtro e bomba.",
+        "attributes": {"medidas": "8,00 x 4,00 x 1,40 m", "material": "fibra", "porte": "grande"},
+        "tags": ["fibra", "kit completo"],
+        "price": {"amount": "29900.00", "max_installments": 12, "updated_at": "2026-11-01T09:00:00-03:00", "note": "Valor do kit. Escavação e instalação são orçadas na visita técnica."}
+      },
+      {
+        "item_id": "SP-AQC-SOLAR",
+        "name": "Aquecedor Solar para Piscina",
+        "category": "acessorio",
+        "description": "Dimensionado conforme o volume da piscina e a área de telhado disponível.",
+        "attributes": {"tipo": "aquecedor solar"},
+        "tags": ["aquecedor"],
+        "price": {"amount": null, "note": "Sob consulta: depende do dimensionamento feito na visita técnica."}
+      }
+    ]
+  },
+  "delivery": {
+    "zones": [
+      {"cities": ["Belém", "Ananindeua", "Marituba", "Benevides"], "fee": "0.00", "lead_time_days_min": 7, "lead_time_days_max": 15, "notes": "Prazo para entrega e instalação após a aprovação do projeto."}
+    ]
+  },
+  "calendar": {
+    "services": [
+      {"service_id": "visita_tecnica", "name": "Visita técnica para avaliação do terreno", "duration_minutes": 60, "capacity": 2}
+    ],
+    "working_hours": {"mon": ["08:00-17:00"], "tue": ["08:00-17:00"], "wed": ["08:00-17:00"], "thu": ["08:00-17:00"], "fri": ["08:00-17:00"], "sat": ["08:00-12:00"]},
+    "slot_step_minutes": 60,
+    "min_notice_minutes": 1440,
+    "horizon_days": 21
+  },
+  "crm": {
+    "chatwoot": {"account_id": 6, "inbox_id": null, "assignee_means_human": false}
+  }
+}
+

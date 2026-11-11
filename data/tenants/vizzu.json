@@ -1,0 +1,75 @@
+{
+  "demo_data": true,
+  "tenant": {
+    "tenant_id": "vizzu",
+    "display_name": "Vizzu Psicologia",
+    "segment": "psychology",
+    "whatsapp_provider": "waha",
+    "crm_provider": "ghl",
+    "timezone": "America/Sao_Paulo"
+  },
+  "business_info": {
+    "hours": "[DEMO] Segunda a sexta, das 8h às 19h (atendimentos presenciais e online).",
+    "location": "[DEMO] Rua Exemplo, 200, sala 304 - atendimento presencial e online para todo o Brasil.",
+    "warranty": "[DEMO] Não se aplica.",
+    "payment_methods": "[DEMO] Pix e cartão de crédito. Emitimos recibo para reembolso do plano de saúde."
+  },
+  "catalog": {
+    "price_max_age_days": 365,
+    "synonyms": {
+      "psicoterapia": ["terapia", "psicologo", "psicologa", "sessao", "consulta"],
+      "infantil": ["crianca", "filho", "filha", "kids"],
+      "adulto": ["para mim", "adulta"],
+      "neuropsicologica": ["neuropsicologia", "avaliacao neuro", "tdah", "autismo", "tea", "laudo"]
+    },
+    "items": [
+      {
+        "item_id": "VZ-PSI-ADULTO",
+        "name": "Psicoterapia individual (adulto) - sessão de 50 min",
+        "category": "servico",
+        "description": "Atendimento presencial ou online com psicólogo(a) da equipe.",
+        "attributes": {"publico": "adulto", "duracao": "50 minutos", "modalidade": "presencial ou online"},
+        "tags": ["psicoterapia", "adulto"],
+        "price": {"amount": "180.00", "max_installments": 1, "updated_at": "2026-11-01T09:00:00-03:00"},
+        "variants": [
+          {"code": "pacote-4", "name": "Pacote mensal com 4 sessões", "price": {"amount": "640.00", "max_installments": 2, "updated_at": "2026-11-01T09:00:00-03:00"}}
+        ]
+      },
+      {
+        "item_id": "VZ-PSI-INFANTIL",
+        "name": "Psicoterapia infantil - sessão de 50 min",
+        "category": "servico",
+        "description": "Atendimento com psicólogo(a) especializado(a) em crianças, com devolutivas aos pais.",
+        "attributes": {"publico": "infantil", "duracao": "50 minutos", "modalidade": "presencial"},
+        "tags": ["psicoterapia", "infantil"],
+        "price": {"amount": "190.00", "max_installments": 1, "updated_at": "2026-11-01T09:00:00-03:00"}
+      },
+      {
+        "item_id": "VZ-AVAL-NEURO",
+        "name": "Avaliação neuropsicológica",
+        "category": "servico",
+        "description": "Investigação de atenção, memória, TDAH, TEA e outras condições, com laudo.",
+        "attributes": {"publico": "infantil e adulto", "modalidade": "presencial"},
+        "tags": ["neuropsicologica", "laudo"],
+        "price": {"amount": null, "note": "O valor depende do protocolo definido na entrevista inicial."}
+      }
+    ]
+  },
+  "calendar": {
+    "services": [
+      {"service_id": "triagem_online", "name": "Triagem inicial online (gratuita)", "duration_minutes": 20, "capacity": 2}
+    ],
+    "working_hours": {"mon": ["08:00-12:00", "13:00-19:00"], "tue": ["08:00-12:00", "13:00-19:00"], "wed": ["08:00-12:00", "13:00-19:00"], "thu": ["08:00-12:00", "13:00-19:00"], "fri": ["08:00-12:00", "13:00-19:00"]},
+    "slot_step_minutes": 30,
+    "min_notice_minutes": 120,
+    "horizon_days": 14
+  },
+  "crm": {
+    "ghl": {
+      "token_setting": "ghl_vizzu_api_token",
+      "location_setting": "ghl_vizzu_location_id",
+      "location_id": "19nHtRjWdzETs8Sv97Pv"
+    }
+  }
+}
+
