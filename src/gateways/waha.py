@@ -356,8 +356,15 @@ class WahaGateway(WhatsAppGateway):
 
         if media.url:
             parts = urlsplit(media.url)
+            host = (parts.hostname or "").lower()
             path_q = parts.path + (f"?{parts.query}" if parts.query else "")
-            _add(parts.path, f"{self.base_url}{path_q}")
+            if host in ("localhost", "127.0.0.1", "::1"):
+                # URL interna do container WAHA → reescreve para a base_url pública
+                _add(parts.path, f"{self.base_url}{path_q}")
+            else:
+                # URL externa (ex.: MinIO S3 do Easypanel / CDN) → baixa diretamente
+                _add("media.url (direto)", media.url)
+                _add(parts.path, f"{self.base_url}{path_q}")
 
         if media.filename:
             clean_fn = media.filename.lstrip("/")
