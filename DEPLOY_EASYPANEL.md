@@ -64,3 +64,12 @@ Clique em **Save** e depois em **Deploy**!
      ```
    - Para testar a Vizzu: `/webhook/vizzu/astracalls` (ou `/waha`).
    - Para testar a Splash: `/webhook/splash-piscinas/astracalls` (ou `/waha`).
+
+---
+
+## 5. Painel, Trava Sandbox e persistência (ETAPA 5)
+
+- **Painel:** `https://salesagent.loboads.top/` (Aba 🔗 mostra as URLs de webhook prontas para copiar).
+- **Proteja o painel:** adicione `ADMIN_TOKEN="<um valor longo e aleatório>"` no Environment. Sem ele, qualquer pessoa com o link pode editar preços e disparar mensagens; em `ENVIRONMENT=production` o painel fica bloqueado até você definir o token.
+- **Trava Sandbox:** enquanto `ENVIRONMENT` não for `production`, a IA só responde números da whitelist, quem mandar `/lobo-sales-agent` (ou `/lobo`) e encerra com `/reset`. Para liberar seu número sem palavra-chave: Aba 🛡️ → "+ Liberar Meu Número" (ou `SANDBOX_ALLOWED_PHONES="5591..."` no Environment).
+- **Persistência (importante):** o painel grava em `/app/data` (`tenants/*.json` e `sandbox_config.json`). Sem volume, essas edições **somem a cada redeploy**. No Easypanel, em **Mounts**, crie um volume para `/app/data` — e, na primeira vez, copie os JSONs de `data/tenants` para ele (ou recadastre pelo painel). Use também um serviço Redis real (`REDIS_BACKEND=redis`) para manter sessões de teste, pausas e memória das conversas entre reinícios.

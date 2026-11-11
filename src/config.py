@@ -10,10 +10,10 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import Field, SecretStr, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 ENV_FILE = PROJECT_ROOT / ".env"
@@ -95,6 +95,17 @@ class Settings(BaseSettings):
     tenant_data_dir: Path = PROJECT_ROOT / "data" / "tenants"
     ai_pause_hours: float = Field(default=24.0, gt=0, le=24 * 30)  # IA silenciada após handoff
 
+    # --- Trava de segurança (Sandbox) ---
+    # Fora de produção o Sandbox é SEMPRE aplicado; em produção vale o switch do painel.
+    sandbox_config_path: Path | None = PROJECT_ROOT / "data" / "sandbox_config.json"
+    # Números sempre liberados (somados à whitelist do painel). Ex.: "5591988887777,5591977776666"
+    sandbox_allowed_phones: Annotated[list[str], NoDecode] = Field(default_factory=list)
+
+    # --- Painel administrativo ---
+    # Se definido, as rotas /api/admin/* exigem o header `X-Admin-Token` (ou Bearer).
+    admin_token: SecretStr | None = None
+    admin_password: SecretStr | None = None
+
     # ------------------------------------------------------------------ #
     # Validadores
     # ------------------------------------------------------------------ #
@@ -120,6 +131,8 @@ class Settings(BaseSettings):
         "astracalls_webhook_secret",
         "chatwoot_api_token",
         "ghl_vizzu_api_token",
+        "admin_token",
+        "admin_password",
         mode="before",
     )
     @classmethod
@@ -128,6 +141,13 @@ class Settings(BaseSettings):
             v = v.strip()
             if not v or v.startswith("your_"):
                 return None
+        return v
+
+    @field_validator("sandbox_allowed_phones", mode="before")
+    @classmethod
+    def _split_phones(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            return [p.strip() for p in v.replace(";", ",").split(",") if p.strip()]
         return v
 
     @field_validator("waha_base_url", "astracalls_base_url", "chatwoot_base_url")
@@ -209,6 +229,10 @@ class Settings(BaseSettings):
     @property
     def whisper_fallback_enabled(self) -> bool:
         return self.openai_api_key is not None
+
+    @property
+    def admin_auth_required(self) -> bool:
+        return self.admin_token is not None or self.admin_password is not None
 
     def safe_summary(self) -> dict[str, Any]:
         """Resumo seguro para logs/health-check: sem segredos nem credenciais de URL."""

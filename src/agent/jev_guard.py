@@ -180,6 +180,15 @@ _CATALOG_KEYWORDS: tuple[str, ...] = (
     "catalogo",
     "parcela",
     "parcelado",
+    # Agência (tenant `loboads`)
+    "trafego",
+    "anuncio",
+    "meta ads",
+    "google ads",
+    "sales agent",
+    "agente de ia",
+    "automacao",
+    "chatbot",
 )
 
 _CITY_MAP: dict[str, str] = {

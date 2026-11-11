@@ -3,6 +3,11 @@
 .env.*
 !.env.example
 
+# Estado de runtime gerado pelo painel (whitelist de telefones, etc.)
+data/sandbox_config.json
+data/*.tmp
+data/tenants/*.tmp
+
 # Python
 __pycache__/
 *.py[cod]

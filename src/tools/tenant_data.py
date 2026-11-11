@@ -14,7 +14,9 @@ Segurança:
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import re
 import threading
 from datetime import date, datetime, time
@@ -269,6 +271,33 @@ class InMemoryTenantDataStore:
     def tenant_ids(self) -> list[str]:
         return sorted(self._data)
 
+    def get_any(self, tenant_id: str) -> TenantData:
+        """Como `get`, mas inclui tenants inativos (uso administrativo/edição)."""
+        try:
+            return self._data[tenant_id]
+        except KeyError:
+            raise TenantNotFoundError(tenant_id=tenant_id) from None
+
+    def all(self) -> list[TenantData]:
+        return [self._data[t] for t in sorted(self._data)]
+
+    @property
+    def allow_demo(self) -> bool:
+        return self._allow_demo
+
+
+def stamp_missing_price_dates(data: TenantData, now: datetime) -> TenantData:
+    """Preço novo sem `updated_at` ganha a data atual (senão `price_max_age_days` o esconderia)."""
+    raw = data.model_dump(mode="json")
+    stamped = False
+    for item in raw.get("catalog", {}).get("items", []):
+        prices = [item.get("price") or {}, *[(v.get("price") or {}) for v in item.get("variants") or []]]
+        for price in prices:
+            if price.get("amount") is not None and not price.get("updated_at"):
+                price["updated_at"] = now.isoformat()
+                stamped = True
+    return TenantData.model_validate(raw) if stamped else data
+
 
 class JsonTenantDataStore(InMemoryTenantDataStore):
     """Carrega `<diretório>/<tenant_id>.json`. Use `reload()` após editar os arquivos."""
@@ -278,6 +307,33 @@ class JsonTenantDataStore(InMemoryTenantDataStore):
         self.directory = Path(directory)
         self._lock = threading.Lock()
         self.reload()
+
+    def path_for(self, tenant_id: str) -> Path:
+        return self.directory / f"{tenant_id}.json"
+
+    def save(self, data: TenantData, *, create: bool = False) -> TenantData:
+        """Grava `<tenant_id>.json` de forma atômica e recarrega o repositório na hora.
+
+        - `create=True` exige que o tenant ainda não exista (evita sobrescrever outro cliente).
+        - Dados de DEMONSTRAÇÃO continuam proibidos onde `allow_demo=False` (produção).
+        """
+        tenant_id = data.tenant_id
+        path = self.path_for(tenant_id)
+        if data.demo_data and not self._allow_demo:
+            raise ConfigurationError("dados de DEMONSTRAÇÃO não podem ser salvos em produção", tenant_id=tenant_id)
+        if create and (tenant_id in self._data or path.exists()):
+            raise ConfigurationError("já existe um cliente com este tenant_id", tenant_id=tenant_id)
+        if not create and tenant_id not in self._data:
+            raise TenantNotFoundError(tenant_id=tenant_id)
+
+        payload = json.dumps(data.model_dump(mode="json", exclude_none=True), ensure_ascii=False, indent=2)
+        tmp = path.with_suffix(".json.tmp")
+        with self._lock:
+            tmp.write_text(payload + "\n", encoding="utf-8")
+            os.replace(tmp, path)
+        self.reload()
+        logger.info("Tenant %s salvo e recarregado (%s)", tenant_id, "criado" if create else "atualizado")
+        return self._data[tenant_id]
 
     def reload(self) -> None:
         if not self.directory.is_dir():

@@ -18,10 +18,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
-# Copia código-fonte e configurações de tenants
+# Copia código-fonte, assets estáticos e configurações de tenants
 COPY main.py ./
 COPY src ./src
 COPY data ./data
+COPY static ./static
 
 EXPOSE 8000
 

@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Lobo AI Sales Agent · Painel</title>
+  <link rel="icon" href="/static/assets/loboads-logo-dark.png">
+  <script>
+    // Aplica o tema salvo antes do primeiro paint (evita "flash" de tema errado)
+    (function () {
+      try {
+        var t = localStorage.getItem("lobo_theme");
+        if (!t) t = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="/static/admin/app.css?v=0.5.0">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img class="logo logo-dark" src="/static/assets/loboads-logo-dark.png" alt="LoboAds Marketing Digital">
+      <img class="logo logo-light" src="/static/assets/loboads-logo-light.png" alt="LoboAds Marketing Digital">
+      <div class="brand-text">
+        <strong>Lobo AI Sales Agent</strong>
+        <span class="muted">Painel de Controle &amp; Playground</span>
+      </div>
+    </div>
+    <div class="topbar-status">
+      <span id="env-badge" class="badge">…</span>
+      <span id="sandbox-badge" class="badge">…</span>
+      <span id="version-badge" class="badge badge-ghost">v…</span>
+    </div>
+    <div class="topbar-actions">
+      <button id="btn-auth" class="icon-btn" title="Token de administrador" aria-label="Token de administrador">🔑</button>
+      <button id="btn-theme" class="icon-btn theme-toggle" title="Alternar tema claro/escuro" aria-label="Alternar tema">
+        <span class="sun">☀️</span><span class="moon">🌙</span>
+      </button>
+    </div>
+  </header>
+
+  <div id="auth-warning" class="banner banner-warning hidden">
+    ⚠️ <strong>Painel sem senha.</strong> Qualquer pessoa com o link pode editar preços, abrir o Sandbox e disparar mensagens.
+    Defina <code>ADMIN_TOKEN</code> nas variáveis de ambiente do Easypanel (em produção o painel fica bloqueado sem ele).
+  </div>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="sandbox" role="tab">🛡️ <span>Segurança &amp; Conexões</span></button>
+    <button class="tab" data-tab="playground" role="tab">💬 <span>Playground ao Vivo</span></button>
+    <button class="tab" data-tab="tenants" role="tab">🏢 <span>Clientes &amp; Catálogo</span></button>
+    <button class="tab" data-tab="conversations" role="tab">🤝 <span>Conversas &amp; Handoff</span></button>
+    <button class="tab" data-tab="webhooks" role="tab">🔗 <span>Webhooks &amp; Disparo</span></button>
+  </nav>
+
+  <main>
+    <!-- ================================================================ ABA 1 -->
+    <section id="tab-sandbox" class="pane active">
+      <div class="grid grid-sandbox">
+        <article class="card card-hero">
+          <div class="card-head">
+            <h2>Trava de Segurança Sandbox</h2>
+            <span id="sandbox-state-chip" class="chip">…</span>
+          </div>
+          <label class="big-switch" id="sandbox-switch-wrap">
+            <input type="checkbox" id="sandbox-enabled">
+            <span class="track"><span class="thumb"></span></span>
+            <span class="big-switch-label">
+              <strong id="sandbox-switch-title">…</strong>
+              <small id="sandbox-switch-sub" class="muted">…</small>
+            </span>
+          </label>
+          <div id="sandbox-forced" class="notice notice-info hidden">
+            🔒 Ambiente <code id="sandbox-env"></code>: a trava fica <strong>sempre ativa</strong> fora de produção, independente do switch.
+          </div>
+
+          <div class="form-grid cols-3">
+            <label class="field span-2">
+              <span>Palavras-chave de ativação</span>
+              <input id="sandbox-triggers" placeholder="/lobo-sales-agent, /lobo">
+            </label>
+            <label class="field">
+              <span>Sessão de teste (min)</span>
+              <input id="sandbox-ttl" type="number" min="1" max="1440">
+            </label>
+            <label class="field span-2">
+              <span>Comandos de parada / reset</span>
+              <input id="sandbox-stops" placeholder="/parar, /reset">
+            </label>
+            <div class="field field-action">
+              <button class="btn btn-primary" id="btn-save-sandbox">💾 Salvar regras</button>
+            </div>
+          </div>
+
+          <div class="divider"></div>
+          <h3>📱 Telefones autorizados (whitelist)</h3>
+          <p class="muted small">Esses números conversam com a IA livremente, sem precisar de palavra-chave.</p>
+          <form class="inline-form" id="form-phone">
+            <input id="sandbox-phone" inputmode="numeric" placeholder="5591988887777" autocomplete="off">
+            <button class="btn btn-success" type="submit">+ Liberar Meu Número</button>
+          </form>
+          <div id="sandbox-phones" class="chips"></div>
+
+          <div class="divider"></div>
+          <div class="row-between">
+            <h3>⏱️ Sessões de teste ativas</h3>
+            <button class="btn btn-ghost btn-sm" id="btn-refresh-sandbox">↻ Atualizar</button>
+          </div>
+          <div id="sandbox-sessions" class="list"></div>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <h2>Status das Integrações</h2>
+            <button class="btn btn-primary btn-sm" id="btn-test-all">⚡ Testar Todas</button>
+          </div>
+          <div id="integrations" class="integrations"></div>
+        </article>
+      </div>
+    </section>
+
+    <!-- ================================================================ ABA 2 -->
+    <section id="tab-playground" class="pane">
+      <div class="grid grid-playground">
+        <article class="card phone-card">
+          <div class="form-grid cols-4 compact">
+            <label class="field"><span>Cliente</span><select id="pg-tenant" class="tenant-select"></select></label>
+            <label class="field"><span>Motor</span>
+              <select id="pg-engine">
+                <option value="deterministic">⚡ Determinístico (offline)</option>
+                <option value="gemini">✨ Gemini (Live API)</option>
+              </select>
+            </label>
+            <label class="field"><span>Nome do lead</span><input id="pg-name" value="Lead Playground"></label>
+            <label class="field"><span>Telefone</span><input id="pg-phone" value="5591900000001" inputmode="numeric"></label>
+          </div>
+          <div class="scenarios">
+            <button class="btn btn-chip" data-scenario="mattress">🛏️ 3 Mensagens (Colchão + Belém)</button>
+            <button class="btn btn-chip" data-scenario="booking">📅 Agendamento de Visita</button>
+            <button class="btn btn-chip" data-scenario="discount">💸 Desconto Alto (Handoff)</button>
+            <button class="btn btn-chip" data-scenario="emergency">🚨 Emergência CVV 188 (Vizzu)</button>
+          </div>
+          <div class="wa">
+            <div class="wa-head">
+              <div class="wa-avatar">🐺</div>
+              <div><strong id="pg-chat-title">…</strong><small id="pg-chat-sub" class="muted">online</small></div>
+              <button class="btn btn-ghost btn-sm wa-reset" id="btn-pg-reset" title="Limpar e resetar conversa">🗑️ Limpar</button>
+            </div>
+            <div class="wa-body" id="pg-chat"></div>
+            <div class="debounce" id="pg-debounce">
+              <div class="debounce-bar"><span id="pg-debounce-fill"></span></div>
+              <small id="pg-debounce-label">⏳ Buffer de debounce</small>
+              <button class="btn btn-sm btn-primary" id="btn-pg-flush">Enviar lote agora</button>
+            </div>
+            <form class="wa-compose" id="pg-form">
+              <input id="pg-input" placeholder="Digite como o lead… (envie várias seguidas!)" autocomplete="off">
+              <button class="wa-send" type="submit" aria-label="Enviar">➤</button>
+            </form>
+            <div class="wa-options">
+              <label class="check"><input type="checkbox" id="pg-immediate"> Lote imediato (sem debounce)</label>
+              <label class="check">Silêncio <input id="pg-silence" type="number" min="1" max="8" step="0.5" value="4"> s</label>
+            </div>
+          </div>
+        </article>
+
+        <article class="card xray">
+          <div class="card-head"><h2>🩻 Raio-X do Turno</h2><span id="xray-status" class="chip">aguardando</span></div>
+          <div id="xray" class="xray-body">
+            <div class="empty">Envie mensagens no simulador para ver estágio do LangGraph, intenção do JEV, ferramentas executadas (argumentos + JSON) e atributos extraídos.</div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- ================================================================ ABA 3 -->
+    <section id="tab-tenants" class="pane">
+      <div class="toolbar">
+        <label class="field inline"><span>Cliente</span><select id="tn-select" class="tenant-select"></select></label>
+        <button class="btn btn-success" id="btn-tn-new">+ Criar Novo Cliente</button>
+        <button class="btn btn-ghost" id="btn-tn-reload">↻ Recarregar</button>
+        <span class="spacer"></span>
+        <label class="check"><input type="checkbox" id="tn-json-mode"> Editor JSON avançado</label>
+      </div>
+      <div id="tn-editor"></div>
+      <div class="savebar" id="tn-savebar">
+        <span id="tn-dirty" class="muted">Sem alterações pendentes</span>
+        <span class="spacer"></span>
+        <button class="btn btn-ghost" id="btn-tn-discard">Descartar</button>
+        <button class="btn btn-primary btn-lg" id="btn-tn-save">💾 Salvar e Aplicar Imediatamente</button>
+      </div>
+    </section>
+
+    <!-- ================================================================ ABA 4 -->
+    <section id="tab-conversations" class="pane">
+      <div class="toolbar">
+        <label class="field inline"><span>Cliente</span><select id="cv-tenant"><option value="">Todos</option></select></label>
+        <button class="btn btn-ghost" id="btn-cv-refresh">↻ Atualizar</button>
+        <label class="check"><input type="checkbox" id="cv-auto" checked> Atualizar a cada 10s</label>
+        <span class="spacer"></span>
+        <span id="cv-counter" class="muted small"></span>
+      </div>
+      <div id="cv-list" class="conversations"></div>
+    </section>
+
+    <!-- ================================================================ ABA 5 -->
+    <section id="tab-webhooks" class="pane">
+      <div class="grid grid-webhooks">
+        <article class="card span-all">
+          <div class="card-head"><h2>URLs de Webhook</h2><small class="muted" id="wh-base"></small></div>
+          <div class="table-wrap"><table class="table" id="wh-table"></table></div>
+        </article>
+        <article class="card">
+          <h2>📲 Teste rápido no celular</h2>
+          <ol class="steps">
+            <li>Configure no WAHA/AstraCalls a URL do cliente acima (evento <code>message</code>; opcional <code>message.any</code> para detectar o atendente).</li>
+            <li>De qualquer celular, envie <code id="wh-trigger-example">/lobo-sales-agent Olá</code> para o número conectado — isso libera uma sessão de teste de <strong id="wh-ttl">30</strong> min só para aquele contato.</li>
+            <li>Ou libere seu número na Aba 🛡️ (whitelist). Para recomeçar do zero, envie <code>/reset</code>.</li>
+          </ol>
+          <div class="notice notice-info">🔒 Mensagens normais de clientes reais são <strong>ignoradas em silêncio</strong> enquanto o Sandbox estiver ativo.</div>
+        </article>
+        <article class="card">
+          <h2>🚀 Testar envio via Gateway</h2>
+          <form id="form-send" class="form-grid cols-2">
+            <label class="field"><span>Cliente</span><select id="ts-tenant" class="tenant-select"></select></label>
+            <label class="field"><span>Provedor</span>
+              <select id="ts-provider"><option value="waha">WAHA</option><option value="astracalls">AstraCalls</option></select>
+            </label>
+            <label class="field"><span>Sessão</span><input id="ts-session" placeholder="padrão do cliente"></label>
+            <label class="field"><span>Telefone de destino</span><input id="ts-phone" inputmode="numeric" placeholder="5591988887777" required></label>
+            <label class="field span-2"><span>Mensagem</span><textarea id="ts-text" rows="3" maxlength="1000">✅ Teste de envio do painel Lobo AI Sales Agent.</textarea></label>
+            <div class="field span-2 row-between">
+              <span id="ts-result" class="muted small"></span>
+              <button class="btn btn-primary" type="submit">Enviar mensagem real</button>
+            </div>
+          </form>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal: item do catálogo -->
+  <dialog id="dlg-item" class="modal">
+    <form method="dialog" id="form-item" class="modal-body">
+      <div class="card-head"><h2 id="dlg-item-title">Produto / Serviço</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Fechar">✕</button></div>
+      <div class="form-grid cols-3">
+        <label class="field"><span>Código (item_id)</span><input name="item_id" required maxlength="64"></label>
+        <label class="field span-2"><span>Nome</span><input name="name" required></label>
+        <label class="field"><span>Categoria</span><input name="category" required placeholder="colchao, servico…"></label>
+        <label class="field span-2"><span>Tags (separadas por vírgula)</span><input name="tags"></label>
+        <label class="field span-3"><span>Descrição</span><textarea name="description" rows="2"></textarea></label>
+        <label class="field span-3"><span>Atributos (um por linha: chave: valor)</span><textarea name="attributes" rows="3" placeholder="tamanho: casal&#10;medidas: 138x188x30 cm"></textarea></label>
+        <label class="field"><span>Preço (R$)</span><input name="amount" inputmode="decimal" placeholder="2899,00"></label>
+        <label class="field"><span>Máx. parcelas</span><input name="max_installments" type="number" min="1" max="24" value="1"></label>
+        <label class="field"><span>% desconto à vista</span><input name="cash_pct" inputmode="decimal" placeholder="5"></label>
+        <label class="field"><span>Preço à vista (R$)</span><input name="cash_amount" inputmode="decimal" placeholder="calculado"></label>
+        <label class="field span-2"><span>Observação do preço</span><input name="note" placeholder="ex.: instalação não inclusa"></label>
+        <label class="check"><input type="checkbox" name="on_request"> Preço sob consulta (IA transfere para humano)</label>
+        <label class="check"><input type="checkbox" name="interest_free" checked> Parcelas sem juros</label>
+        <label class="check"><input type="checkbox" name="in_stock" checked> Em estoque</label>
+        <label class="check"><input type="checkbox" name="active" checked> Ativo no catálogo</label>
+        <label class="field span-3"><span>Variantes (JSON avançado, opcional)</span><textarea name="variants" rows="3" class="mono" placeholder="[]"></textarea></label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" value="cancel" formnovalidate>Cancelar</button>
+        <button class="btn btn-primary" value="save" id="btn-item-save">💾 Salvar item e aplicar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Modal: novo cliente -->
+  <dialog id="dlg-new" class="modal modal-sm">
+    <form method="dialog" id="form-new" class="modal-body">
+      <div class="card-head"><h2>Novo Cliente</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Fechar">✕</button></div>
+      <div class="form-grid cols-2">
+        <label class="field span-2"><span>Identificador (tenant_id)</span><input name="tenant_id" required pattern="[a-z0-9][a-z0-9_\-]{1,63}" placeholder="minha-loja"></label>
+        <label class="field span-2"><span>Nome de exibição</span><input name="display_name" required></label>
+        <label class="field"><span>Segmento</span>
+          <select name="segment"><option value="generic">generic</option><option value="mattress">mattress</option><option value="pools">pools</option><option value="psychology">psychology</option></select>
+        </label>
+        <label class="field"><span>Fuso horário</span><input name="timezone" value="America/Belem"></label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" value="cancel" formnovalidate>Cancelar</button>
+        <button class="btn btn-success" value="save">Criar cliente</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Modal: token -->
+  <dialog id="dlg-auth" class="modal modal-sm">
+    <form method="dialog" id="form-auth" class="modal-body">
+      <div class="card-head"><h2>🔑 Token de administrador</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Fechar">✕</button></div>
+      <p class="muted small">Informe o valor de <code>ADMIN_TOKEN</code>. Ele fica salvo apenas neste navegador.</p>
+      <label class="field"><span>Token</span><input name="token" type="password" autocomplete="current-password"></label>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" value="clear" formnovalidate>Esquecer token</button>
+        <button class="btn btn-primary" value="save">Salvar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <script src="/static/admin/app.js?v=0.5.0" defer></script>
+</body>
+</html>
+

@@ -26,6 +26,7 @@ import time
 import uuid
 from collections.abc import Callable
 from datetime import datetime
+from typing import Any
 
 import redis.asyncio as aioredis
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -205,6 +206,79 @@ class LeadConversationStore:
             except (RedisError, OSError):
                 logger.warning("Não foi possível persistir sessão no Redis; mantida em memória %s", lead.log_context())
 
+    async def update_lead(self, lead: LeadProfile) -> None:
+        """Regrava apenas o perfil do lead, preservando o histórico."""
+        _, history = await self.load(lead.tenant_id, lead.phone)
+        await self.save(lead, history)
+
+    async def delete(self, tenant_id: str, phone: str) -> bool:
+        """Apaga perfil + histórico do contato (reset de conversa)."""
+        key = self._key(tenant_id, phone)
+        existed = self._memory.pop(key, None) is not None
+        if self._redis is not None:
+            try:
+                existed = bool(await self._redis.delete(key)) or existed
+            except (RedisError, OSError):
+                logger.warning("Não foi possível apagar a conversa no Redis")
+        return existed
+
+    async def list_conversations(self, *, tenant_id: str | None = None, limit: int = 500) -> list[dict[str, Any]]:
+        """Lista conversas (lead + resumo do histórico), mais recentes primeiro."""
+        keys: set[str] = set(self._memory)
+        if self._redis is not None:
+            try:
+                async for raw_key in self._redis.scan_iter(match=f"{self._prefix}:*", count=200):
+                    keys.add(raw_key.decode() if isinstance(raw_key, bytes) else raw_key)
+                    if len(keys) >= limit * 2:
+                        break
+            except (RedisError, OSError):
+                logger.warning("Redis indisponível ao listar conversas; usando memória local")
+
+        items: list[dict[str, Any]] = []
+        prefix_len = len(self._prefix) + 1
+        for key in keys:
+            rest = key[prefix_len:]
+            if ":" not in rest:
+                continue
+            key_tenant, phone = rest.rsplit(":", 1)
+            if tenant_id and key_tenant != tenant_id:
+                continue
+            try:
+                lead, history = await self.load(key_tenant, phone)
+            except (ValueError, TypeError):
+                continue
+            last = history[-1] if history else None
+            items.append(
+                {
+                    "lead": lead,
+                    "message_count": len(history),
+                    "last_message": _message_text(last)[:160] if last is not None else None,
+                    "last_role": ("lead" if isinstance(last, HumanMessage) else "ia") if last is not None else None,
+                }
+            )
+        items.sort(key=lambda i: i["lead"].last_interaction_at, reverse=True)
+        return items[:limit]
+
+
+def _message_text(message: BaseMessage) -> str:
+    content = message.content
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return " ".join(str(p.get("text", "")) if isinstance(p, dict) else str(p) for p in content)
+    return str(content)
+
+
+def _extract_turn_tool_calls(messages: list[BaseMessage]) -> list[dict[str, Any]]:
+    """Chamadas de ferramenta feitas pelo LLM DEPOIS da última mensagem do lead (turno atual)."""
+    last_human = max((i for i, m in enumerate(messages) if isinstance(m, HumanMessage)), default=-1)
+    calls: list[dict[str, Any]] = []
+    for msg in messages[last_human + 1 :]:
+        if isinstance(msg, AIMessage):
+            for tc in getattr(msg, "tool_calls", None) or []:
+                calls.append({"name": tc.get("name"), "args": tc.get("args") or {}, "id": tc.get("id")})
+    return calls
+
 
 # --------------------------------------------------------------------------- #
 # Orquestrador de Turno (conecta Buffer -> Transcrição -> LangGraph -> Gateway)
@@ -329,6 +403,8 @@ class SalesAgentRunner:
                 human_handoff_requested=bool(final_state.get("human_handoff_requested")),
                 handoff_reason=final_state.get("handoff_reason"),
                 executed_tools=list(final_state.get("executed_tools") or []),
+                tool_calls=_extract_turn_tool_calls(updated_messages),
+                jev_decision=final_state.get("jev_decision"),
                 reply_text=final_state.get("reply_text"),
                 outgoing_message=outgoing,
                 lead=updated_lead,

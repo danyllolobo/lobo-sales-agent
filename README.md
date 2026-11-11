@@ -61,6 +61,21 @@ py -3.14 -m venv .venv            # ou qualquer Python 3.11+
 | `src/agent/graph.py` | `build_sales_graph` (`StateGraph` compilado), `LeadConversationStore` e `SalesAgentRunner` |
 | `src/agent/transcription.py` | `AudioTranscriber`: transcrição de áudios via Gemini Multimodal com fallback automático para OpenAI Whisper |
 | `src/database/` | `DatabaseManager` (SQLAlchemy 2.0 async) e modelos ORM (`Tenant`, `Conversation`, `MessageLog`) |
+| `src/core/sandbox.py` | `SandboxGuard`: trava de segurança do webhook (whitelist, sessões de teste `/lobo` de 30 min, `/parar`/`/reset`) |
+| `src/admin/` | API do painel (`/api/admin/*`), diagnóstico das 6 integrações, Playground isolado e controle de handoff |
+| `static/admin/` | Painel web (HTML + CSS + JS vanilla, tema claro/escuro com as logos da LoboAds) servido em `GET /` |
+
+### 🛡️ Trava de segurança (Sandbox) — ETAPA 5
+Fora de produção a trava é **sempre** aplicada (em produção vale o switch do painel). Uma mensagem só chega à IA se:
+1. o número estiver na whitelist (painel ou `SANDBOX_ALLOWED_PHONES`), **ou**
+2. o contato tiver uma sessão de teste ativa, **ou**
+3. o texto contiver `/lobo-sales-agent` ou `/lobo` — abre uma sessão de 30 min e a palavra-chave é removida antes de ir para a IA (sozinha, vira *"Olá, gostaria de atendimento"*).
+
+`/parar` ou `/reset` encerram a sessão, apagam a memória e a pausa do contato. Todo o resto é **ignorado em silêncio** (`{"status": "ignored", "reason": "sandbox_locked"}`).
+
+### 🖥️ Painel (`GET /`)
+5 abas: Segurança & Conexões · Playground ao Vivo (com Raio-X do turno) · Clientes & Catálogo (salva em `data/tenants/*.json` e recarrega na hora) · Conversas & Handoff (reativar/pausar IA) · Webhooks & Disparo real.
+Defina `ADMIN_TOKEN` para proteger `/api/admin/*` (obrigatório em produção; o painel pede o token pelo botão 🔑).
 
 ### Dados dos tenants (`data/tenants/*.json`)
 > ⚠️ Os arquivos atuais são **DEMONSTRAÇÃO** (`"demo_data": true`, preços fictícios) e são **bloqueados automaticamente em produção**.

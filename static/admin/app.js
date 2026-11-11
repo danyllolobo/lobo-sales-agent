@@ -1,0 +1,1136 @@
+/* Lobo AI Sales Agent — Painel administrativo (JavaScript vanilla, sem build). */
+"use strict";
+(() => {
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  const TOKEN_KEY = "lobo_admin_token";
+  const THEME_KEY = "lobo_theme";
+  const WEEKDAYS = [["mon", "Seg"], ["tue", "Ter"], ["wed", "Qua"], ["thu", "Qui"], ["fri", "Sex"], ["sat", "Sáb"], ["sun", "Dom"]];
+  const SEGMENTS = ["generic", "mattress", "pools", "psychology"];
+  const INTEGRATION_ICONS = { gemini: "✨", openai: "🎙️", waha: "🟢", astracalls: "📞", chatwoot: "💬", ghl: "🧠" };
+
+  const S = {
+    overview: null,
+    tenants: [],
+    sandbox: null,
+    integrations: {},
+    tenant: null,
+    draft: null,
+    dirty: false,
+    jsonError: null,
+    authPrompted: false,
+    pg: { queue: [], firstAt: 0, lastAt: 0, timer: null, busy: false, chats: {} },
+    cvTimer: null,
+  };
+
+  // ------------------------------------------------------------------ utils
+  const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const clone = (o) => (o === undefined ? undefined : JSON.parse(JSON.stringify(o)));
+  const brl = (v) => (v === null || v === undefined || v === "" ? "—" : Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
+  const nowTime = () => new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const mmss = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.max(0, s % 60)).padStart(2, "0")}`;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  function relTime(iso) {
+    const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (!isFinite(diff)) return "—";
+    if (diff < 60) return "agora";
+    if (diff < 3600) return `há ${Math.floor(diff / 60)} min`;
+    if (diff < 86400) return `há ${Math.floor(diff / 3600)} h`;
+    return new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+  }
+
+  function md(text) {
+    // Escapa primeiro; só então aplica um markdown mínimo (negrito, itálico, código, quebras).
+    return esc(text)
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/`([^`]+?)`/g, "<code>$1</code>")
+      .replace(/(^|[\s(])\*(?!\s)(.+?)\*(?=[\s).,!?]|$)/g, "$1<em>$2</em>")
+      .replace(/\n/g, "<br>");
+  }
+
+  function jsonHtml(value) {
+    const s = JSON.stringify(value, null, 2) ?? "null";
+    const re = /("(?:\\.|[^"\\])*")(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
+    let out = "", last = 0, m;
+    while ((m = re.exec(s))) {
+      out += esc(s.slice(last, m.index));
+      const cls = m[1] ? (m[2] ? "k" : "s") : m[3] ? "b" : "n";
+      out += `<span class="${cls}">${esc(m[1] || m[0])}</span>${m[2] ? esc(m[2]) : ""}`;
+      last = re.lastIndex;
+    }
+    return out + esc(s.slice(last));
+  }
+
+  function parseMoney(raw) {
+    let v = String(raw ?? "").trim().replace(/R\$|\s/g, "");
+    if (!v) return null;
+    if (v.includes(",")) v = v.replace(/\./g, "").replace(",", ".");
+    const n = Number(v);
+    return isFinite(n) ? n.toFixed(2) : raw;
+  }
+
+  // ------------------------------------------------------------------ toasts
+  function toast(kind, title, msg = "", ms = null) {
+    const el = document.createElement("div");
+    el.className = `toast ${kind}`;
+    el.innerHTML = `<span class="t-icon">${kind === "ok" ? "🟢" : "🔴"}</span>
+      <div class="t-body"><div class="t-title">${esc(title)}</div>${msg ? `<div class="t-msg">${esc(msg)}</div>` : ""}</div>
+      ${ms !== null ? `<span class="t-ms">${esc(ms)} ms</span>` : ""}`;
+    $("#toasts").appendChild(el);
+    const ttl = kind === "ok" ? 3800 : 7000;
+    setTimeout(() => { el.classList.add("leaving"); setTimeout(() => el.remove(), 260); }, ttl);
+    el.addEventListener("click", () => el.remove());
+  }
+
+  // ------------------------------------------------------------------ API
+  function detailOf(data, status) {
+    if (!data) return `HTTP ${status}`;
+    const d = data.detail;
+    if (typeof d === "string") return d;
+    if (Array.isArray(d) && d.length) {
+      const e = d[0];
+      const loc = (e.loc || []).filter((p) => p !== "body").join(".");
+      return `${loc ? loc + ": " : ""}${e.msg || "inválido"}${d.length > 1 ? ` (+${d.length - 1})` : ""}`;
+    }
+    return `HTTP ${status}`;
+  }
+
+  async function api(method, path, body) {
+    const t0 = performance.now();
+    const headers = { Accept: "application/json" };
+    if (body !== undefined) headers["Content-Type"] = "application/json";
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (token) headers["X-Admin-Token"] = token;
+    let res;
+    try {
+      res = await fetch(path, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
+    } catch (e) {
+      return { ok: false, status: 0, ms: Math.round(performance.now() - t0), error: "Servidor inacessível (falha de rede)." };
+    }
+    const ms = Math.round(performance.now() - t0);
+    let data = null;
+    try { data = await res.json(); } catch (e) { /* corpo vazio */ }
+    if (!res.ok) {
+      if (res.status === 401 && !S.authPrompted) { S.authPrompted = true; openAuth(); }
+      return { ok: false, status: res.status, ms, data, error: detailOf(data, res.status) };
+    }
+    return { ok: true, status: res.status, ms, data };
+  }
+
+  /** Executa uma ação com spinner no botão e toast de sucesso/erro com latência. */
+  async function act(btn, okTitle, fn, { okMsg = "", errTitle = null, silentOk = false } = {}) {
+    if (btn) { btn.disabled = true; btn.classList.add("loading"); }
+    try {
+      const r = await fn();
+      if (r.ok) { if (!silentOk) toast("ok", okTitle, typeof okMsg === "function" ? okMsg(r.data) : okMsg, r.ms); }
+      else toast("err", errTitle || `Erro: ${okTitle.replace(/^[^\wÀ-ú]+/, "")}`, r.error, r.ms);
+      return r;
+    } finally {
+      if (btn) { btn.disabled = false; btn.classList.remove("loading"); }
+    }
+  }
+
+  // ------------------------------------------------------------------ tema
+  function applyTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem(THEME_KEY, theme);
+  }
+  $("#btn-theme").addEventListener("click", () => {
+    const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+    applyTheme(next);
+    toast("ok", next === "dark" ? "🌙 Tema escuro ativado" : "☀️ Tema claro ativado");
+  });
+
+  // ------------------------------------------------------------------ auth
+  function openAuth() {
+    const dlg = $("#dlg-auth");
+    $("input[name=token]", dlg).value = localStorage.getItem(TOKEN_KEY) || "";
+    if (!dlg.open) dlg.showModal();
+  }
+  $("#btn-auth").addEventListener("click", openAuth);
+  $("#form-auth").addEventListener("submit", (ev) => {
+    const action = ev.submitter?.value;
+    if (action === "clear") { localStorage.removeItem(TOKEN_KEY); toast("ok", "Token removido deste navegador"); }
+    else if (action === "save") {
+      const v = $("#form-auth input[name=token]").value.trim();
+      if (v) localStorage.setItem(TOKEN_KEY, v);
+      toast("ok", "Token salvo", "Recarregando dados do painel…");
+    } else return;
+    S.authPrompted = false;
+    boot();
+  });
+
+  // ------------------------------------------------------------------ abas
+  const loaders = {
+    sandbox: () => loadSandbox(),
+    playground: () => renderChat(),
+    tenants: () => (S.draft ? null : loadTenant($("#tn-select").value)),
+    conversations: () => loadConversations(),
+    webhooks: () => loadWebhooks(),
+  };
+  function activateTab(name) {
+    if (!loaders[name]) name = "sandbox";
+    $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
+    $$(".pane").forEach((p) => p.classList.toggle("active", p.id === `tab-${name}`));
+    $("#tn-savebar").classList.toggle("show", name === "tenants" && !!S.draft);
+    if (location.hash !== `#${name}`) history.replaceState(null, "", `#${name}`);
+    loaders[name]();
+  }
+  $$(".tab").forEach((t) => t.addEventListener("click", () => activateTab(t.dataset.tab)));
+  const currentTab = () => ($(".tab.active")?.dataset.tab || "sandbox");
+
+  // ------------------------------------------------------------------ overview
+  async function loadOverview() {
+    const r = await api("GET", "/api/admin/overview");
+    if (!r.ok) { toast("err", "Falha ao carregar o painel", r.error, r.ms); return false; }
+    S.overview = r.data;
+    S.tenants = r.data.tenants;
+    const env = r.data.environment;
+    $("#env-badge").className = `badge ${env === "production" ? "badge-ok" : "badge-info"}`;
+    $("#env-badge").textContent = `🌐 ${env}`;
+    $("#version-badge").textContent = `v${r.data.version}`;
+    $("#auth-warning").classList.toggle("hidden", !!r.data.auth_required);
+    setSandboxBadge(r.data.sandbox_active);
+    r.data.integrations.forEach((i) => { S.integrations[i.name] = { ...(S.integrations[i.name] || {}), ...i }; });
+    fillTenantSelects();
+    renderIntegrations();
+    return true;
+  }
+
+  function setSandboxBadge(active) {
+    const b = $("#sandbox-badge");
+    b.className = `badge ${active ? "badge-warn" : "badge-ok"}`;
+    b.textContent = active ? "🔒 Sandbox ativo" : "🟢 Produção aberta";
+  }
+
+  function fillTenantSelects() {
+    const opts = S.tenants.map((t) => `<option value="${esc(t.tenant_id)}">${esc(t.display_name)}${t.active ? "" : " (inativo)"}</option>`).join("");
+    $$(".tenant-select").forEach((sel) => {
+      const prev = sel.value;
+      sel.innerHTML = opts;
+      const fallback = S.tenants.find((t) => t.tenant_id === "companhia-dos-sonhos") ? "companhia-dos-sonhos" : S.tenants[0]?.tenant_id;
+      sel.value = S.tenants.some((t) => t.tenant_id === prev) ? prev : (sel.id === "ts-tenant" && S.tenants.some((t) => t.tenant_id === "loboads") ? "loboads" : fallback) || "";
+    });
+    const cv = $("#cv-tenant");
+    const prevCv = cv.value;
+    cv.innerHTML = `<option value="">Todos os clientes</option>${opts}`;
+    cv.value = prevCv;
+    syncPlaygroundTenant();
+    syncSendTenant();
+  }
+  const tenantSummary = (id) => S.tenants.find((t) => t.tenant_id === id);
+
+  // ================================================================== ABA 1 — SANDBOX
+  async function loadSandbox() {
+    const r = await api("GET", "/api/admin/sandbox");
+    if (!r.ok) { toast("err", "Falha ao carregar o Sandbox", r.error, r.ms); return; }
+    S.sandbox = r.data;
+    renderSandbox();
+  }
+
+  function renderSandbox() {
+    const sb = S.sandbox;
+    if (!sb) return;
+    const cfg = sb.config;
+    setSandboxBadge(sb.active);
+    $("#sandbox-enabled").checked = cfg.enabled;
+    $("#sandbox-switch-wrap").classList.toggle("forced", sb.forced_by_environment && !cfg.enabled);
+    const title = sb.active ? "🔒 Modo Sandbox Seguro (Ativo)" : "🟢 Modo Produção Aberto (Atende Todos)";
+    $("#sandbox-switch-title").textContent = title;
+    $("#sandbox-switch-sub").textContent = sb.active
+      ? (!cfg.enabled && sb.forced_by_environment
+          ? "Switch desligado, mas a trava segue ativa por estar fora de produção."
+          : "A IA só responde números liberados, sessões de teste ou quem enviar a palavra-chave.")
+      : "A IA responde QUALQUER contato que escrever para o número conectado.";
+    const chip = $("#sandbox-state-chip");
+    chip.className = `chip ${sb.active ? "chip-warn" : "chip-ok"}`;
+    chip.textContent = sb.active ? "PROTEGIDO" : "ABERTO";
+    $("#sandbox-forced").classList.toggle("hidden", !sb.forced_by_environment);
+    $("#sandbox-env").textContent = sb.environment;
+    if (document.activeElement?.closest?.(".card-hero .form-grid") == null) {
+      $("#sandbox-triggers").value = cfg.trigger_keywords.join(", ");
+      $("#sandbox-stops").value = cfg.stop_keywords.join(", ");
+      $("#sandbox-ttl").value = cfg.session_ttl_minutes;
+    }
+    const phones = cfg.allowed_phones.map((p) => `<span class="chip chip-info">📱 ${esc(p)}<button data-phone="${esc(p)}" title="Remover">×</button></span>`);
+    const seeds = sb.seed_phones.map((p) => `<span class="chip chip-lock" title="Definido em SANDBOX_ALLOWED_PHONES (.env)">🔒 ${esc(p)} · .env</span>`);
+    $("#sandbox-phones").innerHTML = phones.concat(seeds).join("") || `<div class="empty">Nenhum número liberado ainda.</div>`;
+    renderSessions();
+  }
+
+  function renderSessions() {
+    const sessions = S.sandbox?.sessions || [];
+    $("#sandbox-sessions").innerHTML = sessions.length
+      ? sessions.map((s, i) => `
+        <div class="list-item">
+          <span class="chip chip-ok">ATIVA</span>
+          <div class="grow"><strong>${esc(s.phone)}</strong><div class="muted small">${esc(tenantSummary(s.tenant_id)?.display_name || s.tenant_id)}</div></div>
+          <span class="mono small" data-countdown="${i}">⏱ ${mmss(s.expires_in_seconds)}</span>
+          <button class="btn btn-danger btn-sm" data-end-session="${i}">Encerrar / Resetar</button>
+        </div>`).join("")
+      : `<div class="empty">Nenhuma sessão de teste ativa. Envie <code>${esc(S.sandbox?.config.trigger_keywords[0] || "/lobo")}</code> no WhatsApp para abrir uma.</div>`;
+  }
+
+  setInterval(() => {
+    const sessions = S.sandbox?.sessions;
+    if (!sessions?.length) return;
+    let expired = false;
+    sessions.forEach((s, i) => {
+      s.expires_in_seconds -= 1;
+      if (s.expires_in_seconds <= 0) expired = true;
+      const el = $(`[data-countdown="${i}"]`);
+      if (el) el.textContent = `⏱ ${mmss(s.expires_in_seconds)}`;
+    });
+    if (expired) { S.sandbox.sessions = sessions.filter((s) => s.expires_in_seconds > 0); renderSessions(); }
+  }, 1000);
+
+  $("#sandbox-enabled").addEventListener("change", async (ev) => {
+    const enabled = ev.target.checked;
+    if (!enabled && S.sandbox && !S.sandbox.forced_by_environment
+        && !confirm("Abrir o atendimento para TODOS os contatos do número conectado?\n\nA IA passará a responder clientes reais.")) {
+      ev.target.checked = true;
+      return;
+    }
+    const r = await act(null, enabled ? "🔒 Sandbox ativado" : "🟢 Modo produção salvo", () => api("PUT", "/api/admin/sandbox", { enabled }),
+      { okMsg: (d) => (d.forced_by_environment && !enabled ? "Fora de produção a trava continua ativa." : "") });
+    if (r.ok) { S.sandbox = r.data; } else { ev.target.checked = !enabled; }
+    renderSandbox();
+  });
+
+  $("#btn-save-sandbox").addEventListener("click", async (ev) => {
+    const split = (v) => v.split(/[,\s]+/).map((x) => x.trim()).filter(Boolean);
+    const body = {
+      trigger_keywords: split($("#sandbox-triggers").value),
+      stop_keywords: split($("#sandbox-stops").value),
+      session_ttl_minutes: Number($("#sandbox-ttl").value),
+    };
+    const r = await act(ev.currentTarget, "Regras do Sandbox salvas", () => api("PUT", "/api/admin/sandbox", body));
+    if (r.ok) { S.sandbox = r.data; renderSandbox(); }
+  });
+
+  $("#form-phone").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const phone = $("#sandbox-phone").value.replace(/\D/g, "");
+    if (!phone) { toast("err", "Informe um telefone", "Formato: DDI + DDD + número, ex.: 5591988887777"); return; }
+    const r = await act(ev.submitter, "Número liberado na whitelist", () => api("POST", "/api/admin/sandbox/phones", { phone }), { okMsg: phone });
+    if (r.ok) { S.sandbox = r.data; $("#sandbox-phone").value = ""; renderSandbox(); }
+  });
+
+  $("#sandbox-phones").addEventListener("click", async (ev) => {
+    const btn = ev.target.closest("button[data-phone]");
+    if (!btn) return;
+    const phone = btn.dataset.phone;
+    const r = await act(btn, "Número removido da whitelist", () => api("DELETE", `/api/admin/sandbox/phones/${encodeURIComponent(phone)}`), { okMsg: phone });
+    if (r.ok) { S.sandbox = r.data; renderSandbox(); }
+  });
+
+  $("#sandbox-sessions").addEventListener("click", async (ev) => {
+    const btn = ev.target.closest("button[data-end-session]");
+    if (!btn) return;
+    const s = S.sandbox.sessions[Number(btn.dataset.endSession)];
+    const r = await act(btn, "Sessão encerrada e memória resetada",
+      () => api("DELETE", `/api/admin/sandbox/sessions/${encodeURIComponent(s.tenant_id)}/${encodeURIComponent(s.phone)}`), { okMsg: s.phone });
+    if (r.ok) { S.sandbox = r.data; renderSandbox(); }
+  });
+  $("#btn-refresh-sandbox").addEventListener("click", async (ev) => {
+    await act(ev.currentTarget, "Sandbox atualizado", async () => { const r = await api("GET", "/api/admin/sandbox"); if (r.ok) { S.sandbox = r.data; renderSandbox(); } return r; });
+  });
+
+  // ------------------------------------------------------------------ integrações
+  function renderIntegrations() {
+    const order = ["gemini", "openai", "waha", "astracalls", "chatwoot", "ghl"];
+    $("#integrations").innerHTML = order.filter((n) => S.integrations[n]).map((n) => {
+      const it = S.integrations[n];
+      let badge;
+      if (it.status === "ok") badge = `<span class="badge badge-ok">🟢 SUCESSO · ${esc(it.latency_ms)} ms</span>`;
+      else if (it.status === "error") badge = `<span class="badge badge-err">🔴 ERRO</span>`;
+      else if (!it.configured) badge = `<span class="badge badge-ghost">⚪ Não configurado</span>`;
+      else badge = `<span class="badge badge-ghost">Configurado · não testado</span>`;
+      const detail = it.detail || (it.configured ? "Clique em testar para verificar a conexão real." : "Credenciais ausentes no ambiente.");
+      return `<div class="integration ${esc(it.status || "")}" data-integration="${esc(n)}">
+        <div class="integration-head">
+          <div class="integration-icon">${INTEGRATION_ICONS[n] || "🔌"}</div>
+          <div class="integration-title"><strong>${esc(it.label)}</strong><small>${esc(it.target || "—")}</small></div>
+        </div>
+        ${badge}
+        <div class="integration-detail">${esc(detail)}</div>
+        <button class="btn btn-sm" data-test="${esc(n)}">⚡ Testar Conexão</button>
+      </div>`;
+    }).join("");
+  }
+
+  function applyIntegrationResult(res) {
+    S.integrations[res.name] = { ...(S.integrations[res.name] || {}), ...res };
+  }
+
+  $("#integrations").addEventListener("click", async (ev) => {
+    const btn = ev.target.closest("button[data-test]");
+    if (!btn) return;
+    const name = btn.dataset.test;
+    btn.disabled = true; btn.classList.add("loading");
+    const r = await api("POST", `/api/admin/integrations/${name}/test`);
+    if (!r.ok) { toast("err", "Falha ao testar integração", r.error, r.ms); renderIntegrations(); return; }
+    applyIntegrationResult(r.data);
+    renderIntegrations();
+    toast(r.data.ok ? "ok" : "err", `${r.data.label}: ${r.data.ok ? "SUCESSO" : r.data.status === "not_configured" ? "não configurado" : "ERRO"}`, r.data.detail, r.data.latency_ms);
+  });
+
+  $("#btn-test-all").addEventListener("click", async (ev) => {
+    const btn = ev.currentTarget;
+    btn.disabled = true; btn.classList.add("loading");
+    const r = await api("POST", "/api/admin/integrations/test-all");
+    btn.disabled = false; btn.classList.remove("loading");
+    if (!r.ok) { toast("err", "Falha ao testar integrações", r.error, r.ms); return; }
+    r.data.forEach(applyIntegrationResult);
+    renderIntegrations();
+    const ok = r.data.filter((x) => x.ok).length;
+    toast(ok === r.data.length ? "ok" : "err", `${ok}/${r.data.length} integrações com sucesso`,
+      r.data.filter((x) => !x.ok).map((x) => `${x.label}: ${x.detail}`).join(" · "), r.ms);
+  });
+
+  // ================================================================== ABA 2 — PLAYGROUND
+  const pgKey = () => `${$("#pg-tenant").value}|${$("#pg-phone").value.replace(/\D/g, "")}`;
+  const pgChat = () => (S.pg.chats[pgKey()] ||= []);
+
+  function syncPlaygroundTenant() {
+    const t = tenantSummary($("#pg-tenant").value);
+    if (!t) return;
+    $("#pg-chat-title").textContent = t.display_name;
+    $("#pg-chat-sub").textContent = `${t.segment} · simulação isolada (sem WhatsApp/CRM reais)`;
+    const silence = t.debounce_silence_seconds ?? S.overview?.debounce?.silence_seconds ?? 4;
+    $("#pg-silence").value = silence;
+    const engine = $("#pg-engine");
+    engine.querySelector('option[value="gemini"]').disabled = !S.overview?.playground_gemini_available;
+    if (engine.value === "gemini" && !S.overview?.playground_gemini_available) engine.value = "deterministic";
+    renderChat();
+  }
+  $("#pg-tenant").addEventListener("change", syncPlaygroundTenant);
+  $("#pg-phone").addEventListener("change", renderChat);
+
+  function renderChat() {
+    const chat = pgChat();
+    const body = $("#pg-chat");
+    body.innerHTML = chat.length
+      ? chat.map((m) => {
+          if (m.role === "system") return `<div class="bubble system">${esc(m.text)}</div>`;
+          const cls = `bubble ${m.role === "lead" ? "out" : "in"}${m.pending ? " pending" : ""}${m.handoff ? " handoff" : ""}`;
+          const tick = m.role === "lead" ? (m.pending ? " 🕓" : " ✓✓") : "";
+          return `<div class="${cls}">${md(m.text)}<span class="meta">${esc(m.time)}${tick}</span></div>`;
+        }).join("") + (S.pg.busy ? `<div class="typing"><span></span><span></span><span></span></div>` : "")
+      : `<div class="bubble system">Converse como se fosse o lead. Mensagens enviadas em sequência são agrupadas pelo debounce em 1 único turno.</div>`;
+    body.scrollTop = body.scrollHeight;
+  }
+
+  function pgEnqueue(text) {
+    const now = Date.now();
+    if (!S.pg.queue.length) S.pg.firstAt = now;
+    S.pg.lastAt = now;
+    S.pg.queue.push(text);
+    pgChat().push({ role: "lead", text, time: nowTime(), pending: true });
+    renderChat();
+    startDebounce();
+  }
+
+  function startDebounce() {
+    $("#pg-debounce").classList.add("show");
+    if (S.pg.timer) return;
+    S.pg.timer = setInterval(() => {
+      const silence = Math.max(1, Number($("#pg-silence").value) || 4) * 1000;
+      const t = tenantSummary($("#pg-tenant").value);
+      const maxWin = (t?.debounce_max_window_seconds ?? S.overview?.debounce?.max_window_seconds ?? 10) * 1000;
+      const deadline = Math.min(S.pg.lastAt + silence, S.pg.firstAt + maxWin);
+      const remaining = deadline - Date.now();
+      $("#pg-debounce-fill").style.width = `${Math.max(0, Math.min(100, (remaining / silence) * 100))}%`;
+      $("#pg-debounce-label").textContent = `⏳ Agrupando ${S.pg.queue.length} mensagem(ns) · envio em ${(Math.max(0, remaining) / 1000).toFixed(1)}s`;
+      if (remaining <= 0 && !S.pg.busy) pgFlush();
+    }, 100);
+  }
+
+  function stopDebounce() {
+    clearInterval(S.pg.timer);
+    S.pg.timer = null;
+    $("#pg-debounce").classList.remove("show");
+  }
+
+  async function pgFlush(messagesOverride) {
+    const messages = messagesOverride || S.pg.queue.splice(0);
+    if (!messagesOverride) stopDebounce();
+    if (!messages.length) return;
+    pgChat().forEach((m) => { m.pending = false; });
+    S.pg.busy = true;
+    renderChat();
+    const body = {
+      tenant_id: $("#pg-tenant").value,
+      engine: $("#pg-engine").value,
+      phone: $("#pg-phone").value.replace(/\D/g, ""),
+      name: $("#pg-name").value.trim() || null,
+      messages,
+    };
+    $("#xray-status").className = "chip chip-info";
+    $("#xray-status").textContent = "processando…";
+    const r = await api("POST", "/api/admin/playground/simulate", body);
+    S.pg.busy = false;
+    if (!r.ok) {
+      pgChat().push({ role: "system", text: `🔴 Erro: ${r.error}` });
+      renderChat();
+      renderXrayError(r);
+      toast("err", "Erro ao processar o turno", r.error, r.ms);
+      if (S.pg.queue.length) startDebounce();
+      return;
+    }
+    const t = r.data;
+    if (t.reply_text) pgChat().push({ role: "ia", text: t.reply_text, time: nowTime(), handoff: t.status === "handoff" });
+    if (t.status === "silenced") pgChat().push({ role: "system", text: `🔇 IA silenciada (${t.silence_reason || "humano ativo"}) — use 🗑️ Limpar para recomeçar.` });
+    if (t.status === "handoff") pgChat().push({ role: "system", text: `🟡 Handoff humano acionado (${t.handoff_reason}). IA pausada para este contato.` });
+    renderChat();
+    renderXray(t);
+    const titles = { success: "🟢 Turno processado com sucesso", handoff: "🟡 Handoff acionado", silenced: "🔇 IA silenciada" };
+    toast("ok", titles[t.status] || "Turno processado", `${t.batch_size} mensagem(ns) → 1 turno · ${t.tools.length} ferramenta(s)`, r.ms);
+    if (S.pg.queue.length) startDebounce();
+  }
+
+  $("#pg-form").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const input = $("#pg-input");
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = "";
+    if ($("#pg-immediate").checked && !S.pg.busy && !S.pg.queue.length) {
+      pgChat().push({ role: "lead", text, time: nowTime() });
+      pgFlush([text]);
+    } else pgEnqueue(text);
+  });
+  $("#btn-pg-flush").addEventListener("click", () => { if (!S.pg.busy) pgFlush(); });
+
+  async function pgReset(silent = false) {
+    stopDebounce();
+    S.pg.queue = [];
+    const tenant = $("#pg-tenant").value;
+    const phone = $("#pg-phone").value.replace(/\D/g, "");
+    const r = await api("DELETE", `/api/admin/playground/conversations/${encodeURIComponent(tenant)}/${encodeURIComponent(phone)}`);
+    S.pg.chats[pgKey()] = [];
+    renderChat();
+    $("#xray").innerHTML = `<div class="empty">Conversa resetada. Envie uma nova mensagem.</div>`;
+    $("#xray-status").className = "chip";
+    $("#xray-status").textContent = "aguardando";
+    if (!silent) toast(r.ok ? "ok" : "err", r.ok ? "Conversa limpa e memória resetada" : "Falha ao resetar", r.ok ? "" : r.error, r.ms);
+    return r;
+  }
+  $("#btn-pg-reset").addEventListener("click", () => pgReset());
+
+  const SCENARIOS = {
+    mattress: { tenant: "companhia-dos-sonhos", msgs: ["Olá, boa tarde", "Queria ver um colchão de casal com molas ensacadas", "Vocês entregam em Belém?"] },
+    booking: { tenant: "companhia-dos-sonhos", msgs: ["Oi! Quero agendar uma visita à loja", "Pode ser amanhã?"] },
+    discount: { tenant: "companhia-dos-sonhos", msgs: ["Vi o colchão de casal de molas ensacadas", "Consegue mais desconto? Faz mais barato que eu fecho hoje"] },
+    emergency: { tenant: "vizzu", msgs: ["Oi", "Não aguento mais viver, estou pensando em me machucar"] },
+  };
+  $$("[data-scenario]").forEach((btn) => btn.addEventListener("click", async () => {
+    const sc = SCENARIOS[btn.dataset.scenario];
+    if (!tenantSummary(sc.tenant)) { toast("err", "Cliente do cenário não encontrado", sc.tenant); return; }
+    $("#pg-tenant").value = sc.tenant;
+    syncPlaygroundTenant();
+    await pgReset(true);
+    for (const m of sc.msgs) { pgEnqueue(m); await sleep(450); }
+  }));
+
+  function renderXrayError(r) {
+    $("#xray-status").className = "chip chip-err";
+    $("#xray-status").textContent = "🔴 erro";
+    $("#xray").innerHTML = `<div class="notice notice-warn">🔴 ${esc(r.error)} <span class="mono small">(${esc(r.ms)} ms)</span></div>`;
+  }
+
+  function renderXray(t) {
+    const statusMap = {
+      success: ["chip-ok", "🟢 Turno processado com sucesso"],
+      handoff: ["chip-warn", "🟡 Handoff acionado"],
+      silenced: ["chip-info", "🔇 IA silenciada"],
+    };
+    const [cls, label] = statusMap[t.status] || ["chip-err", "🔴 Erro"];
+    $("#xray-status").className = `chip ${cls}`;
+    $("#xray-status").textContent = label;
+    const attrs = Object.entries(t.lead.attributes || {});
+    const tools = t.tools.length
+      ? t.tools.map((tool, i) => `
+        <details class="tool" ${i === 0 ? "open" : ""}>
+          <summary><span class="chip ${tool.ok ? "chip-ok" : tool.requires_human ? "chip-warn" : "chip-err"}">${esc(tool.status)}</span>
+            <span class="mono">${esc(tool.tool)}</span>${tool.requires_human ? ` <span class="chip chip-warn">requer humano</span>` : ""}</summary>
+          <div class="tool-body">
+            <small class="muted">Argumentos enviados pelo LLM</small>
+            <pre class="json">${jsonHtml(tool.args ?? "(executada pelo orquestrador)")}</pre>
+            <small class="muted">JSON retornado pela ferramenta</small>
+            <pre class="json">${jsonHtml(tool.result)}</pre>
+          </div>
+        </details>`).join("")
+      : `<div class="empty">Nenhuma ferramenta chamada neste turno (descoberta/triagem).</div>`;
+    const jev = t.jev_decision;
+    $("#xray").innerHTML = `
+      <div class="kv">
+        <div><small>Turn ID</small><strong class="mono">${esc(t.turn_id)}</strong></div>
+        <div><small>Latência total</small><strong>${esc(t.latency_ms)} ms</strong></div>
+        <div><small>Motor</small><strong>${t.engine === "gemini" ? "✨ Gemini" : "⚡ Determinístico"}</strong></div>
+        <div><small>Estágio LangGraph</small><strong>${esc(t.stage)}</strong></div>
+        <div><small>Intenção (JEV)</small><strong>${esc(t.intent)}</strong></div>
+        <div><small>Lote agrupado</small><strong>${esc(t.batch_size)} msg → 1 turno</strong></div>
+      </div>
+      ${t.handoff_reason ? `<div class="notice notice-warn">🤝 Handoff: <strong>${esc(t.handoff_reason)}</strong> — IA pausada para este contato (nota de CRM não é enviada no Playground).</div>` : ""}
+      ${jev ? `<div class="notice notice-info">🧠 JEV: ${esc(jev.summary || "")} <span class="muted">(confiança ${esc(Math.round((jev.confidence ?? 0) * 100))}%)</span></div>` : ""}
+      <div><h3>🔧 Ferramentas executadas (${t.tools.length})</h3><div class="list">${tools}</div></div>
+      <div><h3>🧾 Atributos extraídos do lead</h3>
+        ${attrs.length ? `<div class="chips">${attrs.map(([k, v]) => `<span class="chip">${esc(k)}: <strong>${esc(v)}</strong></span>`).join("")}</div>` : `<div class="muted small">Nenhum atributo ainda.</div>`}
+      </div>
+      <div><h3>🏷️ Tags aplicadas · status <span class="chip">${esc(t.lead.status)}</span></h3>
+        ${t.lead.tags.length ? `<div class="chips">${t.lead.tags.map((x) => `<span class="chip chip-info">${esc(x)}</span>`).join("")}</div>` : `<div class="muted small">Sem tags.</div>`}
+      </div>`;
+  }
+
+  // ================================================================== ABA 3 — CLIENTES
+  async function loadTenant(id, { silent = true } = {}) {
+    if (!id) { $("#tn-editor").innerHTML = `<div class="empty">Nenhum cliente cadastrado.</div>`; return; }
+    if (S.dirty && !confirm("Há alterações não salvas. Descartar e carregar outro cliente?")) {
+      $("#tn-select").value = S.tenant?.tenant?.tenant_id || id;
+      return;
+    }
+    const r = await api("GET", `/api/admin/tenants/${encodeURIComponent(id)}`);
+    if (!r.ok) { toast("err", "Falha ao carregar cliente", r.error, r.ms); return; }
+    S.tenant = r.data;
+    S.draft = clone(r.data);
+    setDirty(false);
+    renderTenant();
+    if (!silent) toast("ok", "Cliente recarregado", S.draft.tenant.display_name, r.ms);
+  }
+  $("#tn-select").addEventListener("change", (ev) => loadTenant(ev.target.value));
+  $("#btn-tn-reload").addEventListener("click", () => { S.dirty = false; loadTenant($("#tn-select").value, { silent: false }); });
+  $("#tn-json-mode").addEventListener("change", renderTenant);
+
+  function setDirty(v) {
+    S.dirty = v;
+    const bar = $("#tn-savebar");
+    bar.classList.toggle("dirty", v);
+    bar.classList.toggle("show", currentTab() === "tenants" && !!S.draft);
+    $("#tn-dirty").textContent = v ? "● Alterações não salvas" : "Sem alterações pendentes";
+  }
+
+  // Binding declarativo: data-path="tenant.display_name" data-type="str|str?|int|int?|num?|money|money?|bool|csv|hours|del"
+  function getPath(obj, path) { return path.split(".").reduce((o, k) => (o == null ? undefined : o[k]), obj); }
+  function setPath(obj, path, value) {
+    const keys = path.split(".");
+    let o = obj;
+    keys.slice(0, -1).forEach((k, i) => {
+      if (o[k] == null) o[k] = /^\d+$/.test(keys[i + 1]) ? [] : {};
+      o = o[k];
+    });
+    const last = keys[keys.length - 1];
+    if (value === undefined) delete o[last]; else o[last] = value;
+  }
+  function convert(el) {
+    const t = el.dataset.type || "str";
+    const v = el.type === "checkbox" ? el.checked : el.value;
+    switch (t) {
+      case "bool": return !!v;
+      case "str?": return String(v).trim() || null;
+      case "del": return String(v).trim() || undefined;
+      case "int": return v === "" ? null : parseInt(v, 10);
+      case "int?": return v === "" ? null : parseInt(v, 10);
+      case "num?": return v === "" ? null : Number(String(v).replace(",", "."));
+      case "money": return parseMoney(v) ?? "0.00";
+      case "money?": return parseMoney(v);
+      case "csv": return String(v).split(",").map((x) => x.trim()).filter(Boolean);
+      case "hours": { const list = String(v).split(",").map((x) => x.trim()).filter(Boolean); return list.length ? list : undefined; }
+      default: return v;
+    }
+  }
+  const val = (path) => getPath(S.draft, path);
+  const inp = (path, type = "str", attrs = "") => `<input data-path="${esc(path)}" data-type="${type}" value="${esc(Array.isArray(val(path)) ? val(path).join(", ") : val(path) ?? "")}" ${attrs}>`;
+  const chk = (path, label) => `<label class="check"><input type="checkbox" data-path="${esc(path)}" data-type="bool" ${val(path) ? "checked" : ""}> ${esc(label)}</label>`;
+  const sel = (path, options, attrs = "") => `<select data-path="${esc(path)}" ${attrs}>${options.map((o) => `<option value="${esc(o)}" ${val(path) === o ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
+  const field = (label, control, cls = "") => `<label class="field ${cls}"><span>${esc(label)}</span>${control}</label>`;
+
+  function synonymsText() {
+    return Object.entries(val("catalog.synonyms") || {}).map(([k, list]) => `${k}: ${(list || []).join(", ")}`).join("\n");
+  }
+
+  function renderTenant() {
+    const d = S.draft;
+    if (!d) return;
+    if ($("#tn-json-mode").checked) {
+      $("#tn-editor").innerHTML = `<article class="card"><div class="card-head"><h2>Editor JSON avançado</h2><small class="muted">Validado pelo backend (Pydantic) ao salvar</small></div>
+        <textarea id="tn-json" class="mono" rows="30" spellcheck="false">${esc(JSON.stringify(d, null, 2))}</textarea>
+        <div id="tn-json-error" class="notice notice-warn hidden"></div></article>`;
+      return;
+    }
+    const t = d.tenant;
+    const crmBlock = t.crm_provider === "chatwoot" ? `
+        <div class="form-grid cols-4">
+          ${field("Chatwoot account_id", inp("crm.chatwoot.account_id", "int", 'type="number" min="1"'))}
+          ${field("inbox_id", inp("crm.chatwoot.inbox_id", "int?", 'type="number" min="1" placeholder="opcional"'))}
+          ${field("Time de handoff (team_id)", inp("crm.chatwoot.handoff_team_id", "int?", 'type="number" min="1" placeholder="opcional"'))}
+          ${field("Agente de handoff (assignee_id)", inp("crm.chatwoot.handoff_assignee_id", "int?", 'type="number" min="1" placeholder="opcional"'))}
+        </div>
+        <div class="chips" style="margin-top:10px">${chk("crm.chatwoot.assignee_means_human", "Atendente atribuído pausa a IA (assignee_means_human)")}${chk("crm.chatwoot.create_missing", "Criar contato/conversa se não existir")}</div>`
+      : t.crm_provider === "ghl" ? `
+        <div class="form-grid cols-4">
+          ${field("GHL location_id", inp("crm.ghl.location_id", "str?"))}
+          ${field("Campo do token (.env)", inp("crm.ghl.token_setting"))}
+          ${field("Campo da location (.env)", inp("crm.ghl.location_setting"))}
+          ${field("Usuário de handoff", inp("crm.ghl.handoff_user_id", "str?", 'placeholder="opcional"'))}
+        </div>` : `<p class="muted small">Sem CRM: o handoff pausa a IA e avisa o lead, sem nota privada.</p>`;
+
+    const items = d.catalog?.items || [];
+    const catalogRows = items.length ? items.map((it, i) => {
+      const p = it.price || {};
+      const pct = p.amount && p.cash_amount ? Math.round((1 - Number(p.cash_amount) / Number(p.amount)) * 1000) / 10 : null;
+      return `<tr>
+        <td class="mono">${esc(it.item_id)}</td>
+        <td><strong>${esc(it.name)}</strong><div class="muted small">${esc(it.category)}</div></td>
+        <td class="num price">${p.amount == null ? `<span class="chip chip-warn">sob consulta</span>` : esc(brl(p.amount))}</td>
+        <td class="num">${p.amount != null && (p.max_installments || 1) > 1 ? `${esc(p.max_installments)}x ${p.interest_free === false ? "c/ juros" : "s/ juros"}` : "—"}</td>
+        <td class="num">${p.cash_amount != null ? `${esc(brl(p.cash_amount))}${pct ? `<div class="muted small">-${esc(pct)}%</div>` : ""}` : "—"}</td>
+        <td>${it.in_stock === false ? `<span class="chip chip-err">sem estoque</span>` : `<span class="chip chip-ok">em estoque</span>`}${it.active === false ? ` <span class="chip">inativo</span>` : ""}</td>
+        <td class="actions"><button class="btn btn-sm" data-act="edit-item" data-i="${i}">✏️ Editar</button> <button class="btn btn-sm btn-danger" data-act="del-item" data-i="${i}">🗑️</button></td>
+      </tr>`;
+    }).join("") : `<tr><td colspan="7"><div class="empty">Catálogo vazio. Adicione o primeiro produto/serviço.</div></td></tr>`;
+
+    const zones = d.delivery?.zones || [];
+    const zoneRows = zones.map((z, i) => `<tr>
+        <td>${inp(`delivery.zones.${i}.cities`, "csv", 'placeholder="Belém, Ananindeua"')}</td>
+        <td style="width:120px">${inp(`delivery.zones.${i}.fee`, "money", 'inputmode="decimal" placeholder="0 = Grátis"')}</td>
+        <td style="width:90px">${inp(`delivery.zones.${i}.lead_time_days_min`, "int", 'type="number" min="0"')}</td>
+        <td style="width:90px">${inp(`delivery.zones.${i}.lead_time_days_max`, "int", 'type="number" min="0"')}</td>
+        <td style="width:110px"><label class="check"><input type="checkbox" data-path="delivery.zones.${i}.business_days" data-type="bool" ${z.business_days !== false ? "checked" : ""}> úteis</label></td>
+        <td>${inp(`delivery.zones.${i}.notes`, "str?", 'placeholder="observação"')}</td>
+        <td class="actions"><button class="btn btn-sm btn-danger" data-act="del-zone" data-i="${i}">🗑️</button></td>
+      </tr>`).join("") || `<tr><td colspan="7"><div class="empty">Nenhuma cidade atendida cadastrada.</div></td></tr>`;
+
+    const cal = d.calendar;
+    const calendarBlock = cal ? `
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>service_id</th><th>Nome do serviço</th><th>Duração (min)</th><th>Capacidade</th><th>Descrição</th><th></th></tr></thead>
+          <tbody>${(cal.services || []).map((s, i) => `<tr>
+            <td style="width:170px">${inp(`calendar.services.${i}.service_id`, "str", 'placeholder="visita_loja"')}</td>
+            <td>${inp(`calendar.services.${i}.name`)}</td>
+            <td style="width:110px">${inp(`calendar.services.${i}.duration_minutes`, "int", 'type="number" min="5" max="480"')}</td>
+            <td style="width:100px">${inp(`calendar.services.${i}.capacity`, "int", 'type="number" min="1" max="50"')}</td>
+            <td>${inp(`calendar.services.${i}.description`)}</td>
+            <td class="actions"><button class="btn btn-sm btn-danger" data-act="del-service" data-i="${i}">🗑️</button></td>
+          </tr>`).join("")}</tbody></table></div>
+        <button class="btn btn-sm" data-act="add-service" style="margin-top:8px">+ Serviço agendável</button>
+        <div class="form-grid cols-4">
+          ${WEEKDAYS.map(([k, label]) => field(`${label} (HH:MM-HH:MM, separados por vírgula)`, inp(`calendar.working_hours.${k}`, "hours", 'placeholder="fechado"'))).join("")}
+          ${field("Intervalo entre horários (min)", inp("calendar.slot_step_minutes", "int", 'type="number" min="5" max="240"'))}
+          ${field("Antecedência mínima (min)", inp("calendar.min_notice_minutes", "int", 'type="number" min="0"'))}
+          ${field("Horizonte (dias)", inp("calendar.horizon_days", "int", 'type="number" min="1" max="120"'))}
+          ${field("Datas bloqueadas (AAAA-MM-DD)", inp("calendar.blackout_dates", "csv", 'placeholder="2026-12-25, 2027-01-01"'))}
+        </div>
+        <button class="btn btn-sm btn-danger" data-act="disable-calendar" style="margin-top:12px">Desativar agenda</button>`
+      : `<div class="empty">Agenda desativada para este cliente. <button class="btn btn-sm btn-primary" data-act="enable-calendar">Ativar agenda</button></div>`;
+
+    $("#tn-editor").innerHTML = `
+      <article class="card">
+        <div class="card-head"><h2>⚙️ Configurações gerais</h2>${d.demo_data ? `<span class="chip tag-demo">DADOS DE DEMONSTRAÇÃO</span>` : `<span class="chip chip-ok">dados reais</span>`}</div>
+        <div class="form-grid cols-4">
+          ${field("tenant_id", `<input value="${esc(t.tenant_id)}" disabled>`)}
+          ${field("Nome de exibição", inp("tenant.display_name"), "span-2")}
+          ${field("Segmento", sel("tenant.segment", SEGMENTS))}
+          ${field("Fuso horário", inp("tenant.timezone", "str", 'placeholder="America/Belem"'))}
+          ${field("Provedor WhatsApp", sel("tenant.whatsapp_provider", ["waha", "astracalls"]))}
+          ${field("Sessão WhatsApp", inp("tenant.whatsapp_session_id", "str?", 'placeholder="ex.: Danyllo"'))}
+          ${field("CRM", sel("tenant.crm_provider", ["chatwoot", "ghl", "none"], 'data-act="crm-provider"'))}
+          ${field("Silêncio do debounce (s)", inp("tenant.debounce_silence_seconds", "num?", 'type="number" min="1" max="8" step="0.5" placeholder="padrão global"'))}
+          ${field("Teto máximo do lote (s)", inp("tenant.debounce_max_window_seconds", "num?", 'type="number" min="2" max="30" step="0.5" placeholder="padrão global"'))}
+        </div>
+        <div class="chips" style="margin-top:12px">${chk("tenant.active", "Cliente ativo (webhook atende)")}${chk("demo_data", "Dados de demonstração (demo_data) — bloqueados em produção")}</div>
+        <div class="divider"></div>
+        <h3>🔌 CRM (${esc(t.crm_provider)})</h3>
+        ${crmBlock}
+      </article>
+
+      <article class="card section">
+        <div class="card-head"><h2>🛍️ Catálogo &amp; Preços</h2><button class="btn btn-success btn-sm" data-act="new-item">+ Novo Produto/Serviço</button></div>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Código</th><th>Nome / categoria</th><th class="num">Preço</th><th class="num">Parcelas</th><th class="num">À vista</th><th>Estoque</th><th></th></tr></thead>
+          <tbody>${catalogRows}</tbody>
+        </table></div>
+        <div class="form-grid cols-3">
+          ${field("Validade máxima do preço (dias)", inp("catalog.price_max_age_days", "int?", 'type="number" min="1" placeholder="sem validade"'))}
+          <label class="field span-2"><span>Sinônimos de busca (um por linha — termo: sinônimo1, sinônimo2)</span>
+            <textarea id="tn-synonyms" rows="4" class="mono" placeholder="casal: 138x188, duplo">${esc(synonymsText())}</textarea></label>
+        </div>
+      </article>
+
+      <article class="card section">
+        <div class="card-head"><h2>🚚 Entregas / Frete por cidade</h2><button class="btn btn-success btn-sm" data-act="add-zone">+ Adicionar cidade/zona</button></div>
+        <div class="table-wrap"><table class="table">
+          <thead><tr><th>Cidades</th><th>Frete (R$)</th><th>Prazo mín.</th><th>Prazo máx.</th><th>Dias</th><th>Observação</th><th></th></tr></thead>
+          <tbody>${zoneRows}</tbody>
+        </table></div>
+      </article>
+
+      <article class="card section">
+        <div class="card-head"><h2>🏪 Informações do negócio</h2></div>
+        <div class="form-grid cols-2">
+          ${field("Endereço / localização", `<textarea data-path="business_info.location" data-type="del" rows="2">${esc(val("business_info.location") || "")}</textarea>`)}
+          ${field("Horário de funcionamento", `<textarea data-path="business_info.hours" data-type="del" rows="2">${esc(val("business_info.hours") || "")}</textarea>`)}
+          ${field("Garantia", `<textarea data-path="business_info.warranty" data-type="del" rows="2">${esc(val("business_info.warranty") || "")}</textarea>`)}
+          ${field("Formas de pagamento", `<textarea data-path="business_info.payment_methods" data-type="del" rows="2">${esc(val("business_info.payment_methods") || "")}</textarea>`)}
+        </div>
+      </article>
+
+      <article class="card section">
+        <div class="card-head"><h2>📅 Agenda &amp; serviços agendáveis</h2></div>
+        ${calendarBlock}
+      </article>`;
+  }
+
+  const editor = $("#tn-editor");
+  editor.addEventListener("input", (ev) => {
+    const el = ev.target;
+    if (el.id === "tn-json") {
+      try { S.draft = JSON.parse(el.value); S.jsonError = null; $("#tn-json-error").classList.add("hidden"); }
+      catch (e) { S.jsonError = e.message; const box = $("#tn-json-error"); box.textContent = `JSON inválido: ${e.message}`; box.classList.remove("hidden"); }
+      setDirty(true);
+      return;
+    }
+    if (el.id === "tn-synonyms") {
+      const syn = {};
+      el.value.split("\n").forEach((line) => {
+        const [k, rest] = line.split(":");
+        if (k && k.trim() && rest !== undefined) syn[k.trim()] = rest.split(",").map((x) => x.trim()).filter(Boolean);
+      });
+      setPath(S.draft, "catalog.synonyms", syn);
+      setDirty(true);
+      return;
+    }
+    if (!el.dataset.path) return;
+    setPath(S.draft, el.dataset.path, convert(el));
+    setDirty(true);
+  });
+  editor.addEventListener("change", (ev) => {
+    const el = ev.target;
+    if (el.dataset.act === "crm-provider") {
+      if (el.value === "chatwoot" && !S.draft.crm?.chatwoot) setPath(S.draft, "crm.chatwoot", { account_id: 1, assignee_means_human: false });
+      if (el.value === "ghl" && !S.draft.crm?.ghl) setPath(S.draft, "crm.ghl", { token_setting: "ghl_vizzu_api_token", location_setting: "ghl_vizzu_location_id" });
+      renderTenant();
+    }
+  });
+  editor.addEventListener("click", async (ev) => {
+    const btn = ev.target.closest("button[data-act]");
+    if (!btn) return;
+    const i = Number(btn.dataset.i);
+    const d = S.draft;
+    switch (btn.dataset.act) {
+      case "add-zone": (d.delivery ||= { zones: [] }).zones.push({ cities: [], fee: "0.00", lead_time_days_min: 1, lead_time_days_max: 2, business_days: true }); break;
+      case "del-zone": d.delivery.zones.splice(i, 1); break;
+      case "add-service": d.calendar.services.push({ service_id: `servico_${d.calendar.services.length + 1}`, name: "Novo serviço", duration_minutes: 30, capacity: 1 }); break;
+      case "del-service":
+        if (d.calendar.services.length <= 1) { toast("err", "A agenda precisa de ao menos 1 serviço", "Use “Desativar agenda” para remover tudo."); return; }
+        d.calendar.services.splice(i, 1); break;
+      case "enable-calendar":
+        d.calendar = { services: [{ service_id: "visita", name: "Visita / reunião", duration_minutes: 30, capacity: 1 }],
+          working_hours: { mon: ["09:00-18:00"], tue: ["09:00-18:00"], wed: ["09:00-18:00"], thu: ["09:00-18:00"], fri: ["09:00-18:00"] },
+          slot_step_minutes: 30, min_notice_minutes: 120, horizon_days: 14, blackout_dates: [] };
+        break;
+      case "disable-calendar": if (!confirm("Desativar a agenda deste cliente?")) return; d.calendar = null; break;
+      case "new-item": openItem(null); return;
+      case "edit-item": openItem(i); return;
+      case "del-item": {
+        const it = d.catalog.items[i];
+        if (!confirm(`Excluir "${it.name}" do catálogo?`)) return;
+        d.catalog.items.splice(i, 1);
+        setDirty(true);
+        await saveTenant(null, `Item “${it.name}” excluído e aplicado`);
+        return;
+      }
+      default: return;
+    }
+    setDirty(true);
+    renderTenant();
+  });
+
+  async function saveTenant(btn, okTitle = "Cliente salvo e aplicado imediatamente") {
+    if (!S.draft) return { ok: false };
+    if (S.jsonError) { toast("err", "Corrija o JSON antes de salvar", S.jsonError); return { ok: false }; }
+    const id = S.tenant.tenant.tenant_id;
+    const r = await act(btn, okTitle, () => api("PUT", `/api/admin/tenants/${encodeURIComponent(id)}`, S.draft),
+      { okMsg: "Validado (Pydantic), gravado no JSON e recarregado em memória.", errTitle: "Erro ao salvar cliente" });
+    if (r.ok) {
+      S.tenant = r.data.tenant;
+      S.draft = clone(r.data.tenant);
+      setDirty(false);
+      const idx = S.tenants.findIndex((t) => t.tenant_id === id);
+      if (idx >= 0) S.tenants[idx] = r.data.summary;
+      fillTenantSelects();
+      $("#tn-select").value = id;
+      renderTenant();
+    }
+    return r;
+  }
+  $("#btn-tn-save").addEventListener("click", (ev) => saveTenant(ev.currentTarget));
+  $("#btn-tn-discard").addEventListener("click", () => {
+    S.draft = clone(S.tenant);
+    S.jsonError = null;
+    setDirty(false);
+    renderTenant();
+    toast("ok", "Alterações descartadas");
+  });
+
+  // ------------------------------------------------------------------ modal item
+  const F = (form, name) => form.elements.namedItem(name);
+  let editingIndex = null;
+  function openItem(index) {
+    editingIndex = index;
+    const it = index === null ? { item_id: "", name: "", category: "", price: { amount: null, max_installments: 1, interest_free: true }, in_stock: true, active: true }
+      : clone(S.draft.catalog.items[index]);
+    const f = $("#form-item");
+    const p = it.price || {};
+    $("#dlg-item-title").textContent = index === null ? "Novo produto / serviço" : `Editar ${it.name}`;
+    F(f, "item_id").value = it.item_id || "";
+    F(f, "name").value = it.name || "";
+    F(f, "category").value = it.category || "";
+    F(f, "tags").value = (it.tags || []).join(", ");
+    F(f, "description").value = it.description || "";
+    F(f, "attributes").value = Object.entries(it.attributes || {}).map(([k, v]) => `${k}: ${v}`).join("\n");
+    F(f, "amount").value = p.amount ?? "";
+    F(f, "on_request").checked = p.amount == null && index !== null;
+    F(f, "max_installments").value = p.max_installments || 1;
+    F(f, "interest_free").checked = p.interest_free !== false;
+    F(f, "cash_amount").value = p.cash_amount ?? "";
+    F(f, "cash_pct").value = p.amount && p.cash_amount ? (Math.round((1 - p.cash_amount / p.amount) * 1000) / 10) : "";
+    F(f, "note").value = p.note || "";
+    F(f, "in_stock").checked = it.in_stock !== false;
+    F(f, "active").checked = it.active !== false;
+    F(f, "variants").value = it.variants?.length ? JSON.stringify(it.variants, null, 2) : "";
+    f.dataset.original = JSON.stringify(it);
+    toggleOnRequest();
+    $("#dlg-item").showModal();
+  }
+  function toggleOnRequest() {
+    const f = $("#form-item");
+    ["amount", "cash_pct", "cash_amount", "max_installments"].forEach((n) => { f[n].disabled = F(f, "on_request").checked; });
+  }
+  F($("#form-item"), "on_request").addEventListener("change", toggleOnRequest);
+  F($("#form-item"), "cash_pct").addEventListener("input", () => {
+    const f = $("#form-item");
+    const amount = Number(parseMoney(F(f, "amount").value));
+    const pct = Number(String(F(f, "cash_pct").value).replace(",", "."));
+    F(f, "cash_amount").value = amount && pct > 0 && pct < 100 ? (Math.round(amount * (1 - pct / 100) * 100) / 100).toFixed(2) : "";
+  });
+  F($("#form-item"), "cash_amount").addEventListener("input", () => {
+    const f = $("#form-item");
+    const amount = Number(parseMoney(F(f, "amount").value));
+    const cash = Number(parseMoney(F(f, "cash_amount").value));
+    F(f, "cash_pct").value = amount && cash ? Math.round((1 - cash / amount) * 1000) / 10 : "";
+  });
+
+  $("#form-item").addEventListener("submit", async (ev) => {
+    if (ev.submitter?.value !== "save") return;
+    ev.preventDefault();
+    const f = ev.target;
+    const original = JSON.parse(f.dataset.original || "{}");
+    let variants = [];
+    if (F(f, "variants").value.trim()) {
+      try { variants = JSON.parse(F(f, "variants").value); if (!Array.isArray(variants)) throw new Error("use uma lista []"); }
+      catch (e) { toast("err", "Variantes inválidas", e.message); return; }
+    }
+    const attributes = {};
+    F(f, "attributes").value.split("\n").forEach((line) => {
+      const idx = line.indexOf(":");
+      if (idx > 0) attributes[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+    });
+    const onRequest = F(f, "on_request").checked;
+    const price = {
+      ...(original.price || {}),
+      amount: onRequest ? null : parseMoney(F(f, "amount").value),
+      cash_amount: onRequest ? null : parseMoney(F(f, "cash_amount").value),
+      max_installments: Number(F(f, "max_installments").value) || 1,
+      interest_free: F(f, "interest_free").checked,
+      note: F(f, "note").value.trim() || null,
+    };
+    if (!onRequest && price.amount == null) { toast("err", "Informe o preço", "Ou marque “Preço sob consulta”."); return; }
+    const op = original.price || {};
+    if (price.amount !== op.amount || price.cash_amount !== op.cash_amount || price.max_installments !== op.max_installments || !op.updated_at) {
+      price.updated_at = new Date().toISOString();
+    }
+    Object.keys(price).forEach((k) => { if (price[k] === null) delete price[k]; });
+    const item = {
+      ...original,
+      item_id: F(f, "item_id").value.trim(),
+      name: F(f, "name").value.trim(),
+      category: F(f, "category").value.trim(),
+      description: F(f, "description").value.trim(),
+      attributes,
+      tags: F(f, "tags").value.split(",").map((x) => x.trim()).filter(Boolean),
+      price,
+      variants,
+      in_stock: F(f, "in_stock").checked,
+      active: F(f, "active").checked,
+    };
+    const items = (S.draft.catalog ||= { items: [] }).items;
+    const backup = clone(items);
+    if (editingIndex === null) items.push(item); else items[editingIndex] = item;
+    setDirty(true);
+    const r = await saveTenant($("#btn-item-save"), `Item “${item.name}” salvo e aplicado`);
+    if (r.ok) $("#dlg-item").close();
+    else { S.draft.catalog.items = backup; }
+  });
+
+  // ------------------------------------------------------------------ novo cliente
+  $("#btn-tn-new").addEventListener("click", () => { $("#form-new").reset(); $("#dlg-new").showModal(); });
+  $("#form-new").addEventListener("submit", async (ev) => {
+    if (ev.submitter?.value !== "save") return;
+    ev.preventDefault();
+    const f = ev.target;
+    const crm = {};
+    const body = {
+      demo_data: false,
+      tenant: {
+        tenant_id: F(f, "tenant_id").value.trim().toLowerCase(),
+        display_name: F(f, "display_name").value.trim(),
+        segment: F(f, "segment").value,
+        timezone: F(f, "timezone").value.trim() || "America/Belem",
+        whatsapp_provider: "waha",
+        crm_provider: "none",
+      },
+      business_info: {},
+      catalog: { items: [], synonyms: {} },
+      delivery: { zones: [] },
+      crm,
+    };
+    const r = await act(ev.submitter, "Cliente criado", () => api("POST", "/api/admin/tenants", body), { okMsg: body.tenant.display_name });
+    if (!r.ok) return;
+    $("#dlg-new").close();
+    S.tenants.push(r.data.summary);
+    fillTenantSelects();
+    S.dirty = false;
+    $("#tn-select").value = body.tenant.tenant_id;
+    await loadTenant(body.tenant.tenant_id);
+  });
+
+  // ================================================================== ABA 4 — CONVERSAS
+  async function loadConversations(btn) {
+    const tenant = $("#cv-tenant").value;
+    const r = await api("GET", `/api/admin/conversations${tenant ? `?tenant_id=${encodeURIComponent(tenant)}` : ""}`);
+    if (btn) toast(r.ok ? "ok" : "err", r.ok ? "Conversas atualizadas" : "Falha ao listar conversas", r.ok ? `${r.data.length} contato(s)` : r.error, r.ms);
+    if (!r.ok) return;
+    const list = r.data;
+    const paused = list.filter((c) => c.ai_paused).length;
+    $("#cv-counter").textContent = `${list.length} contato(s) · ${paused} com IA pausada`;
+    $("#cv-list").innerHTML = list.length ? list.map((c, i) => {
+      const initial = esc((c.name || "?").trim().charAt(0).toUpperCase() || "?");
+      const attrs = Object.entries(c.attributes || {}).filter(([k]) => k !== "ctwa_source");
+      const until = c.pause?.until ? new Date(c.pause.until).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : null;
+      return `<article class="card conv ${c.ai_paused ? "paused" : ""}">
+        <div class="conv-head">
+          <div class="conv-avatar">${initial}</div>
+          <div class="grow" style="flex:1;min-width:0"><strong>${esc(c.name || "Sem nome")}</strong><div class="muted small mono">${esc(c.phone)}</div></div>
+          ${c.ai_paused ? `<span class="chip chip-warn">⏸️ IA pausada</span>` : `<span class="chip chip-ok">🟢 IA ativa</span>`}
+        </div>
+        <div class="chips">
+          <span class="chip">${esc(tenantSummary(c.tenant_id)?.display_name || c.tenant_id)}</span>
+          <span class="chip chip-info">${esc(c.status)}</span>
+          ${c.tags.map((t) => `<span class="chip ${t === "atendimento_humano" ? "chip-warn" : ""}">${esc(t)}</span>`).join("")}
+          ${c.source ? `<span class="chip">origem: ${esc(c.source)}</span>` : ""}
+        </div>
+        ${attrs.length ? `<div class="muted small">${attrs.map(([k, v]) => `${esc(k)}: <strong>${esc(v)}</strong>`).join(" · ")}</div>` : ""}
+        ${c.last_message ? `<div class="conv-last">${c.last_role === "ia" ? "🤖" : "👤"} ${esc(c.last_message)}</div>` : ""}
+        ${c.ai_paused && c.pause ? `<div class="muted small">Motivo: <strong>${esc(c.pause.reason)}</strong>${until ? ` · até ${esc(until)}` : ""}</div>` : ""}
+        <div class="row-between"><span class="muted small">${esc(c.message_count)} msg · ${esc(relTime(c.last_interaction_at))}</span>
+          <div class="conv-actions">
+            ${c.ai_paused ? `<button class="btn btn-success btn-sm" data-cv="resume" data-i="${i}">🔄 Reativar IA</button>`
+              : `<button class="btn btn-sm" data-cv="pause" data-i="${i}">⏸️ Pausar IA Manualmente</button>`}
+            <button class="btn btn-ghost btn-sm" data-cv="reset" data-i="${i}" title="Apagar memória da conversa">🧹 Resetar</button>
+          </div></div>
+      </article>`;
+    }).join("") : `<div class="empty">Nenhuma conversa real ainda. Elas aparecem aqui quando contatos liberados pelo Sandbox falam com o agente.</div>`;
+    $("#cv-list").dataset.items = JSON.stringify(list.map((c) => [c.tenant_id, c.phone]));
+  }
+  $("#btn-cv-refresh").addEventListener("click", (ev) => loadConversations(ev.currentTarget));
+  $("#cv-tenant").addEventListener("change", () => loadConversations());
+  $("#cv-list").addEventListener("click", async (ev) => {
+    const btn = ev.target.closest("button[data-cv]");
+    if (!btn) return;
+    const [tenant, phone] = JSON.parse($("#cv-list").dataset.items || "[]")[Number(btn.dataset.i)] || [];
+    if (!tenant) return;
+    const base = `/api/admin/conversations/${encodeURIComponent(tenant)}/${encodeURIComponent(phone)}`;
+    let r;
+    if (btn.dataset.cv === "resume") r = await act(btn, "🔄 IA reativada", () => api("POST", `${base}/resume`), { okMsg: (d) => (d.crm_synced ? "Pausa removida e tag removida no CRM." : "Pausa e tag atendimento_humano removidas.") });
+    else if (btn.dataset.cv === "pause") r = await act(btn, "⏸️ IA pausada manualmente", () => api("POST", `${base}/pause`, {}), { okMsg: phone });
+    else {
+      if (!confirm("Apagar memória/histórico deste contato e reativar a IA?")) return;
+      r = await act(btn, "🧹 Conversa resetada", () => api("DELETE", base), { okMsg: phone });
+    }
+    if (r.ok) loadConversations();
+  });
+  S.cvTimer = setInterval(() => {
+    if (currentTab() === "conversations" && $("#cv-auto").checked && !document.hidden) loadConversations();
+  }, 10000);
+
+  // ================================================================== ABA 5 — WEBHOOKS
+  async function loadWebhooks() {
+    const r = await api("GET", "/api/admin/webhooks");
+    if (!r.ok) { toast("err", "Falha ao carregar webhooks", r.error, r.ms); return; }
+    const origin = window.location.origin;
+    $("#wh-base").textContent = `Domínio detectado: ${origin}`;
+    const trigger = r.data.trigger_keywords?.[0] || "/lobo-sales-agent";
+    $("#wh-trigger-example").textContent = `${trigger} Olá`;
+    $("#wh-ttl").textContent = S.sandbox?.config.session_ttl_minutes ?? 30;
+    const urlCell = (path) => `<div class="row-between"><span class="url">${esc(origin + path)}</span><button class="btn btn-sm" data-copy="${esc(origin + path)}">📋 Copiar</button></div>`;
+    $("#wh-table").innerHTML = `<thead><tr><th>Cliente</th><th>Canal padrão</th><th>WAHA</th><th>AstraCalls</th></tr></thead><tbody>${
+      r.data.tenants.map((t) => `<tr>
+        <td><strong>${esc(t.display_name)}</strong><div class="muted small mono">${esc(t.tenant_id)}</div></td>
+        <td><span class="chip">${esc(t.whatsapp_provider)}</span>${t.whatsapp_session_id ? `<div class="muted small">sessão: ${esc(t.whatsapp_session_id)}</div>` : ""}</td>
+        <td style="min-width:280px">${urlCell(t.paths.waha)}</td>
+        <td style="min-width:280px">${urlCell(t.paths.astracalls)}</td>
+      </tr>`).join("")}</tbody>`;
+  }
+  $("#wh-table").addEventListener("click", async (ev) => {
+    const btn = ev.target.closest("button[data-copy]");
+    if (!btn) return;
+    const text = btn.dataset.copy;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (e) {
+      const ta = document.createElement("textarea");
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      const ok = document.execCommand("copy"); ta.remove();
+      if (!ok) { toast("err", "Não foi possível copiar", text); return; }
+    }
+    toast("ok", "📋 URL copiada", text);
+  });
+
+  function syncSendTenant() {
+    const t = tenantSummary($("#ts-tenant").value);
+    if (!t) return;
+    $("#ts-provider").value = t.whatsapp_provider;
+    $("#ts-session").placeholder = t.whatsapp_session_id ? `padrão: ${t.whatsapp_session_id}` : "padrão do .env";
+  }
+  $("#ts-tenant").addEventListener("change", syncSendTenant);
+  $("#form-send").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const phone = $("#ts-phone").value.replace(/\D/g, "");
+    const body = {
+      tenant_id: $("#ts-tenant").value,
+      provider: $("#ts-provider").value,
+      phone,
+      text: $("#ts-text").value.trim(),
+      session_id: $("#ts-session").value.trim() || null,
+    };
+    if (!confirm(`Enviar uma mensagem REAL pelo ${body.provider.toUpperCase()} para ${phone}?`)) return;
+    const r = await act(ev.submitter, "📲 Mensagem enviada pelo gateway", () => api("POST", "/api/admin/gateway/test-send", body),
+      { okMsg: (d) => `${d.provider.toUpperCase()} · sessão ${d.session_id} · id ${d.message_id || "—"}`, errTitle: "Gateway recusou o envio" });
+    $("#ts-result").innerHTML = r.ok
+      ? `🟢 <strong>Sucesso</strong> — ${esc(r.data.provider)} / ${esc(r.data.session_id)} · id <span class="mono">${esc(r.data.message_id || "—")}</span> · ${esc(r.ms)} ms`
+      : `🔴 <strong>Erro</strong> — ${esc(r.error)} · ${esc(r.ms)} ms`;
+  });
+
+  // ------------------------------------------------------------------ boot
+  window.addEventListener("beforeunload", (ev) => { if (S.dirty) { ev.preventDefault(); ev.returnValue = ""; } });
+
+  async function boot() {
+    const ok = await loadOverview();
+    if (!ok) return;
+    await loadSandbox();
+    activateTab((location.hash || "#sandbox").slice(1));
+  }
+  boot();
+})();

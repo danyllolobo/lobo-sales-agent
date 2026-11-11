@@ -23,6 +23,9 @@ def settings(**kw) -> Settings:
         "waha_api_key": "k",
         "debounce_silence_seconds": 1.0,
         "debounce_max_window_seconds": 3.0,
+        # ETAPA 5: fora de produção a trava Sandbox é obrigatória → o lead de teste fica na whitelist
+        "sandbox_allowed_phones": [PHONE],
+        "sandbox_config_path": None,
     }
     base.update(kw)
     return Settings(_env_file=None, **base)

@@ -123,6 +123,9 @@ class TurnResult(_PhoneMaskedModel):
     handoff_reason: str | None = None
 
     executed_tools: list[ToolResult] = Field(default_factory=list)
+    # Chamadas de ferramenta emitidas pelo LLM (nome + argumentos) — usado no Raio-X do painel
+    tool_calls: list[dict[str, Any]] = Field(default_factory=list)
+    jev_decision: dict[str, Any] | None = None
     reply_text: str | None = None
     outgoing_message: OutgoingMessage | None = None
     lead: LeadProfile

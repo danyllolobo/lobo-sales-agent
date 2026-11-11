@@ -1,0 +1,96 @@
+{
+  "demo_data": true,
+  "tenant": {
+    "tenant_id": "loboads",
+    "display_name": "LoboAds Marketing Digital",
+    "segment": "generic",
+    "whatsapp_provider": "waha",
+    "whatsapp_session_id": "Danyllo",
+    "crm_provider": "chatwoot",
+    "timezone": "America/Belem"
+  },
+  "business_info": {
+    "hours": "[DEMO] Segunda a sexta, das 9h às 18h (atendimento online para todo o Brasil).",
+    "location": "[DEMO] Belém/PA — atendimento 100% online, com reuniões por videochamada.",
+    "warranty": "[DEMO] Sem fidelidade: contratos mensais com acompanhamento de resultados e relatórios semanais.",
+    "payment_methods": "[DEMO] Pix, boleto ou cartão de crédito (mensalidade recorrente)."
+  },
+  "catalog": {
+    "price_max_age_days": 365,
+    "synonyms": {
+      "trafego": ["trafego pago", "anuncios", "anuncio", "meta ads", "facebook ads", "instagram ads", "google ads", "campanhas"],
+      "agente": ["agente de ia", "sales agent", "chatbot", "robo de atendimento", "atendimento automatico", "automacao", "ia"],
+      "crm": ["chatwoot", "gohighlevel", "ghl", "funil"],
+      "agenda": ["agendamento", "agendamentos", "calendario"]
+    },
+    "items": [
+      {
+        "item_id": "LB-TRAFEGO-PRO",
+        "name": "Gestão de Tráfego Pago (Meta Ads & Google Ads)",
+        "category": "servico",
+        "description": "Planejamento, criação e otimização de campanhas no Meta Ads e Google Ads com relatórios semanais.",
+        "attributes": {"canais": "Meta Ads e Google Ads", "relatorios": "semanais", "contrato": "mensal"},
+        "tags": ["trafego", "anuncios", "meta ads", "google ads"],
+        "price": {
+          "amount": "1500.00",
+          "max_installments": 1,
+          "updated_at": "2026-11-11T09:00:00-03:00",
+          "note": "[DEMO] Valor mensal da gestão. A verba de anúncios é paga diretamente às plataformas."
+        }
+      },
+      {
+        "item_id": "LB-AI-ESSENCIAL",
+        "name": "Lobo AI Sales Agent (Plano Atendimento Essencial)",
+        "category": "servico",
+        "description": "Agente de IA no WhatsApp com atendimento 24h, agrupamento de mensagens, catálogo e preços determinísticos e transferência para humano.",
+        "attributes": {"canal": "WhatsApp", "atendimento": "24h", "integracoes": "WhatsApp + catálogo"},
+        "tags": ["agente", "ia", "whatsapp", "atendimento"],
+        "price": {
+          "amount": "497.00",
+          "max_installments": 1,
+          "updated_at": "2026-11-11T09:00:00-03:00",
+          "note": "[DEMO] Mensalidade. Implantação orçada no diagnóstico."
+        }
+      },
+      {
+        "item_id": "LB-AI-PRO",
+        "name": "Lobo AI Sales Agent (Plano Comercial Pro com CRM & Agenda)",
+        "category": "servico",
+        "description": "Tudo do Essencial + integração com CRM (Chatwoot/GoHighLevel), agendamento automático, tags de funil e notas de handoff.",
+        "attributes": {"canal": "WhatsApp", "atendimento": "24h", "integracoes": "CRM + agenda + WhatsApp"},
+        "tags": ["agente", "ia", "crm", "agenda", "whatsapp"],
+        "price": {
+          "amount": "997.00",
+          "max_installments": 1,
+          "updated_at": "2026-11-11T09:00:00-03:00",
+          "note": "[DEMO] Mensalidade. Implantação orçada no diagnóstico."
+        }
+      }
+    ]
+  },
+  "calendar": {
+    "services": [
+      {
+        "service_id": "diagnostico_comercial",
+        "name": "Reunião de Diagnóstico Estratégico com Danyllo Lobo",
+        "duration_minutes": 30,
+        "capacity": 1,
+        "description": "Videochamada para entender o negócio e desenhar o plano de tráfego + IA."
+      }
+    ],
+    "working_hours": {
+      "mon": ["09:00-12:00", "14:00-18:00"],
+      "tue": ["09:00-12:00", "14:00-18:00"],
+      "wed": ["09:00-12:00", "14:00-18:00"],
+      "thu": ["09:00-12:00", "14:00-18:00"],
+      "fri": ["09:00-12:00", "14:00-18:00"]
+    },
+    "slot_step_minutes": 30,
+    "min_notice_minutes": 120,
+    "horizon_days": 14
+  },
+  "crm": {
+    "chatwoot": {"account_id": 4, "inbox_id": null, "assignee_means_human": false}
+  }
+}
+

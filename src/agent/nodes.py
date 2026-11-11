@@ -407,6 +407,8 @@ class DeterministicSalesChatModel(BaseChatModel):
             "piscina", "piscinas", "fibra", "aquecedor",
             "psicoterapia", "terapia", "psicologo", "psicologa", "neuropsicologica", "tdah", "autismo", "laudo",
             "geladeira", "travesseiro",
+            # Agência (tenant `loboads`)
+            "trafego", "anuncio", "meta ads", "google ads", "sales agent", "agente de ia", "automacao", "chatbot",
         )
         if any(f" {t} " in norm or t in norm for t in catalog_triggers):
             # Extrai a linha/trecho relevante de produto para uma busca limpa
@@ -474,6 +476,14 @@ class DeterministicSalesChatModel(BaseChatModel):
                 "Olá! Tudo bem? Seja bem-vindo(a) à Splash Piscinas! 🏊‍♂️\n\n"
                 "Para eu preparar seu orçamento: de qual **cidade** você fala e qual é o **espaço aproximado** "
                 "disponível no terreno? Se puder enviar uma foto da área, também ajuda bastante!"
+            )
+        if "segmento: `generic`" in sys_text:
+            name_match = re.search(r"empresa \*\*(.+?)\*\*", sys_text)
+            company = name_match.group(1) if name_match else "nossa empresa"
+            return (
+                f"Olá! Tudo bem? Seja muito bem-vindo(a) à **{company}**! 😊\n\n"
+                "Me conta um pouco sobre o seu negócio: qual é o seu **segmento** e qual é o principal "
+                "**desafio comercial** hoje (gerar mais clientes, atender mais rápido no WhatsApp ou organizar o funil)?"
             )
         return (
             "Olá, boa tarde! Seja muito bem-vindo(a)! 😊\n\n"
@@ -624,7 +634,10 @@ class DeterministicSalesChatModel(BaseChatModel):
         if len(parts) == 1:
             parts.append("Como posso te ajudar hoje?")
         elif not any(p.get("tool") in ("check_available_slots", "create_booking") for p in payloads):
-            parts.append("Gostaria de agendar uma visita à nossa loja para experimentar pessoalmente ou prefere já garantir o seu?")
+            if "segmento: `generic`" in sys_text:
+                parts.append("Quer agendar uma reunião rápida de diagnóstico para montarmos o plano ideal para você?")
+            else:
+                parts.append("Gostaria de agendar uma visita à nossa loja para experimentar pessoalmente ou prefere já garantir o seu?")
 
         return AIMessage(content="\n\n".join(parts))
 
@@ -638,7 +651,6 @@ def create_gemini_chat_model(settings: Settings) -> BaseChatModel:
         return ChatGoogleGenerativeAI(
             model=settings.gemini_model,
             google_api_key=settings.google_api_key.get_secret_value(),
-            api_version="v1beta",
             temperature=0.2,
         )
     return DeterministicSalesChatModel()
