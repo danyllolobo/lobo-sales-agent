@@ -180,10 +180,13 @@ async def test_bound_tools_enforce_tenant_closure_isolation(store, fake_redis):
         assert "tenant_id" not in schema_props
         assert "lead_phone" not in schema_props
 
-    # Buscar colchão dentro do turno da Vizzu retorna NOT_FOUND (isolamento estrito)
+    # Buscar colchão dentro do turno da Vizzu nunca vaza itens de outro tenant (retorna apenas carros-chefes da Vizzu)
     payload = await by_name["search_catalog"].ainvoke({"query": "colchão casal molas ensacadas"})
     assert payload["tenant_id"] == "vizzu"
-    assert payload["status"] == ToolStatus.NOT_FOUND.value
+    assert payload["status"] == ToolStatus.OK.value
+    assert payload["requires_human"] is False
+    assert payload["data"]["featured_fallback"] is True
+    assert all(i["item_id"].startswith("VZ-") for i in payload["data"]["results"])
     assert len(recorded) == 1 and recorded[0].tenant_id == "vizzu"
 
 

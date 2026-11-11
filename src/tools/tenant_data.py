@@ -90,6 +90,7 @@ class CatalogItem(_Strict):
     tags: list[str] = Field(default_factory=list)
     price: PriceInfo
     variants: list[ItemVariant] = Field(default_factory=list)
+    featured: bool = False
     in_stock: bool = True
     active: bool = True
 

@@ -7,6 +7,7 @@
   const THEME_KEY = "lobo_theme";
   const WEEKDAYS = [["mon", "Seg"], ["tue", "Ter"], ["wed", "Qua"], ["thu", "Qui"], ["fri", "Sex"], ["sat", "Sáb"], ["sun", "Dom"]];
   const SEGMENTS = ["generic", "mattress", "pools", "psychology"];
+  const LLM_MODELS = ["gemini-3.8-flash", "gemini-2.5-pro", "gemini-3-pro", "gemini-4-argon", "gpt-4o", "gpt-4o-mini"];
   const INTEGRATION_ICONS = { gemini: "✨", openai: "🎙️", waha: "🟢", astracalls: "📞", chatwoot: "💬", ghl: "🧠" };
 
   const S = {
@@ -268,6 +269,8 @@
       }
       const splitEl = $("#sandbox-split-messages");
       if (splitEl) splitEl.checked = cfg.split_messages !== false;
+      const modelEl = $("#sandbox-llm-model");
+      if (modelEl) modelEl.value = cfg.llm_model || S.overview?.gemini_model || "gemini-3.8-flash";
     }
     const phones = cfg.allowed_phones.map((p) => `<span class="chip chip-info">📱 ${esc(p)}<button data-phone="${esc(p)}" title="Remover">×</button></span>`);
     const seeds = sb.seed_phones.map((p) => `<span class="chip chip-lock" title="Definido em SANDBOX_ALLOWED_PHONES (.env)">🔒 ${esc(p)} · .env</span>`);
@@ -345,13 +348,17 @@
       debounce_silence_seconds: sil,
       debounce_max_window_seconds: win,
       split_messages: $("#sandbox-split-messages") ? $("#sandbox-split-messages").checked : true,
+      llm_model: $("#sandbox-llm-model") ? $("#sandbox-llm-model").value : "gemini-3.8-flash",
     };
-    const r = await act(ev.currentTarget, "Regras do Sandbox e Debounce salvas", () => api("PUT", "/api/admin/sandbox", body));
+    const r = await act(ev.currentTarget, "Regras do Sandbox, Debounce e Modelo salvas", () => api("PUT", "/api/admin/sandbox", body));
     if (r.ok) {
       S.sandbox = r.data;
-      if (S.overview?.debounce) {
-        S.overview.debounce.silence_seconds = sil;
-        S.overview.debounce.max_window_seconds = win;
+      if (S.overview) {
+        if (S.overview.debounce) {
+          S.overview.debounce.silence_seconds = sil;
+          S.overview.debounce.max_window_seconds = win;
+        }
+        if (body.llm_model) S.overview.gemini_model = body.llm_model;
       }
       renderSandbox();
     }
@@ -784,6 +791,7 @@
           ${field("Provedor WhatsApp", sel("tenant.whatsapp_provider", ["waha", "astracalls"]))}
           ${field("Sessão WhatsApp", inp("tenant.whatsapp_session_id", "str?", 'placeholder="ex.: Danyllo"'))}
           ${field("CRM", sel("tenant.crm_provider", ["chatwoot", "ghl", "none"], 'data-act="crm-provider"'))}
+          ${field("Modelo de IA (Flash vs. Pro)", sel("tenant.llm_model", LLM_MODELS), "span-2")}
           <label class="field span-2">
             <span>⏱️ Silêncio para fechar o lote (debounce): <strong id="tn-silence-val" class="mono">${esc(t.debounce_silence_seconds ?? S.overview?.debounce?.silence_seconds ?? 8)}s</strong></span>
             <input type="range" data-path="tenant.debounce_silence_seconds" data-type="num?" min="2" max="30" step="1" value="${esc(t.debounce_silence_seconds ?? S.overview?.debounce?.silence_seconds ?? 8)}">

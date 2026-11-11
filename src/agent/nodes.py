@@ -344,6 +344,7 @@ class DeterministicSalesChatModel(BaseChatModel):
     simulação local, garantindo latência zero e reprodutibilidade de 100%.
     """
 
+    model_name: str = "gemini-3.8-flash"
     bound_tool_names: list[str] = Field(default_factory=list)
 
     @property
@@ -394,36 +395,67 @@ class DeterministicSalesChatModel(BaseChatModel):
             if not self.bound_tool_names or name in self.bound_tool_names:
                 calls.append({"name": name, "args": args, "id": f"call_{uuid.uuid4().hex[:10]}"})
 
+        # 0. Objeção de preço ("Achei caro", "Tá caro") -> quebra de objeção consultiva (sem chamar tools de handoff)
+        if self._is_price_objection(norm):
+            return calls
+
         # 1. Código explícito de item (ex.: CS-ENS-CASAL)
         code_match = _ITEM_CODE_RE.search(user_text.upper())
         if code_match and any(k in norm for k in (" preco ", " valor ", " custa ", " box ", " variante ")):
             variant = "com-box" if " box " in norm else None
             add_call("get_realtime_price", {"item_id": code_match.group(1), "variant": variant})
 
-        # 2. Busca no catálogo
+        # 2. Busca no catálogo (específica ou exploratória/anúncio)
         catalog_triggers = (
             "colchao", "colchoes", "mola", "molas", "ensacada", "ensacadas", "pocket",
             "espuma", "ortopedico", "casal", "queen", "king", "solteiro",
             "piscina", "piscinas", "fibra", "aquecedor",
             "psicoterapia", "terapia", "psicologo", "psicologa", "neuropsicologica", "tdah", "autismo", "laudo",
             "geladeira", "travesseiro",
+            # Exploratórias / Anúncios ("outros modelos", "quais as opções", etc.)
+            "outros modelos", "outro modelo", "quais modelos", "quais as opcoes", "quais opcoes",
+            "o que voces tem", "tem promocao", "quero saber mais", "to pesquisando", "estou pesquisando",
             # Agência (tenant `loboads`)
             "trafego", "anuncio", "meta ads", "google ads", "sales agent", "agente de ia", "automacao", "chatbot",
         )
-        if any(f" {t} " in norm or t in norm for t in catalog_triggers):
-            # Extrai a linha/trecho relevante de produto para uma busca limpa
-            non_quoted_product_lines = [
-                line.strip()
-                for line in user_text.splitlines()
-                if not line.strip().startswith("[Lead respondeu citando")
-                and any(t in normalize_text(line) for t in catalog_triggers)
-            ]
-            product_lines = non_quoted_product_lines or [
-                line.strip()
-                for line in user_text.splitlines()
-                if any(t in normalize_text(line) for t in catalog_triggers)
-            ]
-            query_text = " ".join(product_lines) if product_lines else user_text
+        is_booking_request = any(
+            k in norm
+            for k in (
+                "agendar", "agendamento", "marcar consulta", "marcar avaliacao",
+                "marcar sessao", "marcar visita", "quero marcar", "quero agendar",
+                "gostaria de agendar",
+            )
+        )
+        # Se for apenas um pedido de agendamento vindo de anúncio ("vi no anúncio e quero agendar minha avaliação"),
+        # prioriza a triagem de agendamento em vez de buscar a palavra "anuncio" no catálogo.
+        has_non_ad_catalog_trigger = any(
+            (f" {t} " in norm or t in norm)
+            for t in catalog_triggers
+            if t != "anuncio"
+        )
+        if has_non_ad_catalog_trigger or ("anuncio" in norm and not is_booking_request):
+            # Se a mensagem tem cabeçalho de anúncio ("... MENSAGEM DO CLIENTE: Ola Gostaria ver outros modelos")
+            # e o cliente pede "outros modelos" / "quais opções", prioriza o pedido do cliente na busca
+            ad_client_split = re.split(r"mensagem do cliente\s*:", user_text, maxsplit=1, flags=re.IGNORECASE)
+            if len(ad_client_split) == 2 and any(
+                k in normalize_text(ad_client_split[1])
+                for k in ("outros modelos", "outro modelo", "quais modelos", "quais as opcoes", "quais opcoes", "o que voces tem")
+            ):
+                query_text = ad_client_split[1].strip()
+            else:
+                # Extrai a linha/trecho relevante de produto para uma busca limpa
+                non_quoted_product_lines = [
+                    line.strip()
+                    for line in user_text.splitlines()
+                    if not line.strip().startswith("[Lead respondeu citando")
+                    and any(t in normalize_text(line) for t in catalog_triggers)
+                ]
+                product_lines = non_quoted_product_lines or [
+                    line.strip()
+                    for line in user_text.splitlines()
+                    if any(t in normalize_text(line) for t in catalog_triggers)
+                ]
+                query_text = " ".join(product_lines) if product_lines else user_text
             add_call("search_catalog", {"query": query_text})
 
         # 3. Entrega / Frete
@@ -449,28 +481,169 @@ class DeterministicSalesChatModel(BaseChatModel):
         elif any(k in norm for k in ("forma de pagamento", "formas de pagamento", "aceita pix", "aceita cartao")):
             add_call("get_business_info", {"info_type": "payment_methods"})
 
-        # 5. Agenda (confirmação de slot ISO ou consulta de disponibilidade)
+        # 5. Agenda (confirmação de slot ISO ou consulta de disponibilidade APÓS triagem)
         slot_match = _ISO_SLOT_RE.search(user_text)
         if slot_match and any(k in norm for k in ("agendar", "marcar", "confirmo", "quero esse", "fechar", "reservar")):
             add_call("create_booking", {"slot_datetime": slot_match.group(1)})
         elif any(k in norm for k in ("agendar", "agendamento", "marcar", "horario disponivel", "horarios disponiveis", "visita tecnica", "visitar a loja")):
             date_match = _ISO_DATE_RE.search(user_text)
-            if date_match:
-                target_date = date_match.group(1)
-            else:
-                # Extrai a data atual do SystemPrompt e soma 1 dia
-                sys_date_match = _ISO_DATE_RE.search(sys_text)
-                base_date = (
-                    datetime.strptime(sys_date_match.group(1), "%Y-%m-%d").date()
-                    if sys_date_match
-                    else utcnow().date()
-                )
-                target_date = (base_date + timedelta(days=1)).isoformat()
-            add_call("check_available_slots", {"date": target_date})
+            has_explicit_day = bool(date_match) or any(
+                d in norm for d in (" amanha ", " hoje ", " segunda", " terca", " quarta", " quinta", " sexta", " sabado")
+            )
+            has_qualification = any(
+                k in sys_text
+                for k in ("tamanho=", "publico=", "modalidade_interesse=", "medidas_interesse=", "cidade=", "Status do lead: qualified")
+            ) or bool(attrs.get("tamanho") or attrs.get("publico") or attrs.get("medidas_interesse"))
+
+            # Regra do Funil Obrigatório (Seção 3): só consulta a agenda se o lead já passou pela triagem
+            # OU se especificou uma data/dia concreto para verificar horários.
+            if has_explicit_day or has_qualification:
+                if date_match:
+                    target_date = date_match.group(1)
+                else:
+                    sys_date_match = _ISO_DATE_RE.search(sys_text)
+                    base_date = (
+                        datetime.strptime(sys_date_match.group(1), "%Y-%m-%d").date()
+                        if sys_date_match
+                        else utcnow().date()
+                    )
+                    target_date = (base_date + timedelta(days=1)).isoformat()
+                add_call("check_available_slots", {"date": target_date})
 
         return calls
 
+    @staticmethod
+    def _is_price_objection(norm: str) -> bool:
+        return any(
+            p in norm
+            for p in (
+                "achei caro",
+                "ta caro",
+                "esta caro",
+                "muito caro",
+                "ficou caro",
+                "valor alto",
+                "preco alto",
+                "acima do meu orcamento",
+                "pesado no orcamento",
+                "fora do meu orcamento",
+            )
+        )
+
     def _discovery_reply(self, user_text: str, sys_text: str) -> str:
+        norm = f" {normalize_text(user_text)} "
+
+        # 1. Quebra de Objeção de Preço ("Achei caro") — SDR/Closer Consultivo Master
+        if self._is_price_objection(norm):
+            if "segmento: `psychology`" in sys_text:
+                return (
+                    "Compreendo perfeitamente o seu ponto! 😊 Cuidar da saúde emocional é um investimento "
+                    "direto na sua qualidade de vida e bem-estar a longo prazo.\n\n"
+                    "Aqui na Vizzu, além de contarmos com especialistas dedicados e **emissão de recibo para reembolso "
+                    "no plano de saúde**, temos a opção do **pacote mensal** que reduz o valor por sessão e parcelamento "
+                    "facilitado. Prefere que eu te explique como funciona o pacote mensal ou o reembolso?"
+                )
+            if "segmento: `pools`" in sys_text:
+                return (
+                    "Entendo perfeitamente! 😊 Uma piscina de fibra da Splash é um patrimônio com **alta durabilidade**, "
+                    "**5 anos de garantia estrutural**, valorização imediata do seu imóvel e lazer para toda a família.\n\n"
+                    "Além disso, temos **entrega grátis** na Região Metropolitana e parcelamento facilitado em até "
+                    "**10x sem juros** (ou em até 12x no cartão). Quer que eu simule uma condição parcelada que fique "
+                    "confortável no seu planejamento?"
+                )
+            return (
+                "Entendo perfeitamente o seu ponto! 😊 Um colchão de qualidade é um investimento diário na "
+                "**saúde da sua coluna** e no seu descanso, com **alta durabilidade** para muitos anos de uso e "
+                "**3 anos de garantia de fábrica**.\n\n"
+                "Para ficar bem leve no seu orçamento, você conta com **entrega grátis** na Região Metropolitana "
+                "e facilidade de pagamento em até **10x sem juros** no cartão (ou desconto especial à vista no PIX). "
+                "Prefere aproveitar o parcelamento em **10x sem juros** ou quer conhecer também nossa linha de espuma "
+                "de alta densidade com excelente custo-benefício?"
+            )
+
+        # 2. Reconhecimento de Lead Recorrente ("returning_contact=sim")
+        lead_name_match = re.search(r"- Nome do lead:\s*(.+?)\.", sys_text)
+        lead_name = lead_name_match.group(1).strip() if lead_name_match else ""
+        if lead_name.lower() in ("não informado", "nao informado", "lead playground"):
+            lead_name = ""
+
+        is_returning = "returning_contact=sim" in sys_text or (
+            "(recorrente)" in sys_text and "returning_contact=nao" not in sys_text
+        )
+
+        # 3. Triagem Consultiva Obrigatória antes do Agendamento (quando o lead pede agendamento no escuro)
+        is_booking_request = any(
+            k in norm
+            for k in (
+                "agendar", "agendamento", "marcar consulta", "marcar avaliacao",
+                "marcar sessao", "marcar visita", "quero marcar", "quero agendar",
+                "gostaria de agendar",
+            )
+        )
+        has_ad_context = "Origem do lead: Anúncio" in sys_text or "origem_anuncio=meta_ads" in sys_text
+        ad_headline_match = re.search(r"ad_headline=([^,\n.]+)", sys_text)
+        ad_topic = ad_headline_match.group(1).strip() if ad_headline_match else None
+
+        if is_booking_request:
+            ad_intro = (
+                f"Vi que você veio pelo nosso anúncio sobre **{ad_topic}** — vai ser um enorme prazer te atender! "
+                if ad_topic
+                else (
+                    "Vi que você veio pelo nosso anúncio — vai ser um enorme prazer te atender! "
+                    if has_ad_context
+                    else ""
+                )
+            )
+            if "segmento: `psychology`" in sys_text:
+                return (
+                    f"Olá{f', {lead_name}' if lead_name else ''}! Seja muito bem-vindo(a) à Vizzu Psicologia! 😊 "
+                    f"{ad_intro}Com certeza vamos organizar o seu agendamento!\n\n"
+                    "Para eu separar o profissional com a **especialidade** ideal para o seu horário: "
+                    "o atendimento seria para **você (adulto)** ou para um **filho/dependente (qual a idade)**? "
+                    "E você busca **psicoterapia** ou **avaliação neuropsicológica** (e já fez terapia antes ou seria a primeira vez)?"
+                )
+            if "segmento: `pools`" in sys_text:
+                return (
+                    f"Olá{f', {lead_name}' if lead_name else ''}! Seja muito bem-vindo(a) à Splash Piscinas! 🏊‍♂️ "
+                    f"{ad_intro}Maravilha! Antes de agendarmos a visita técnica no seu espaço:\n\n"
+                    "Você fala de qual **cidade** e já tem uma ideia do **tamanho de piscina** que cabe no seu terreno (ex.: 6x3m, 7x3,5m ou 8x4m)?"
+                )
+            return (
+                f"Olá{f', {lead_name}' if lead_name else ''}! Seja muito bem-vindo(a) à Companhia dos Sonhos! 😊 "
+                f"{ad_intro}Perfeito, nossa loja tem um showroom incrível para você testar!\n\n"
+                "Para eu já separar as melhores opções para quando você chegar: qual **medida** você precisa "
+                "(solteiro, casal, queen ou king) e você busca algo mais **firme para a coluna** ou mais **macio com molas ensacadas**?"
+            )
+
+        if is_returning:
+            greeting_name = f", {lead_name}" if lead_name else ""
+            return (
+                f"Oi{greeting_name}! Que bom falar com você de novo! 😊\n\n"
+                "Como posso te ajudar hoje?"
+            )
+
+        if has_ad_context:
+            topic_str = f" sobre **{ad_topic}**" if ad_topic else ""
+            if "segmento: `psychology`" in sys_text:
+                return (
+                    f"Olá, tudo bem? Seja muito bem-vindo(a) à Vizzu Psicologia! 😊 "
+                    f"Vi que você veio pelo nosso anúncio{topic_str}. Vai ser um enorme prazer te atender!\n\n"
+                    "Para eu te direcionar ao especialista ideal: o atendimento seria para **você (adulto)** "
+                    "ou para **criança/adolescente (qual a idade)**? E você busca **psicoterapia** ou **avaliação neuropsicológica**?"
+                )
+            if "segmento: `pools`" in sys_text:
+                return (
+                    f"Olá, tudo bem? Seja muito bem-vindo(a) à Splash Piscinas! 🏊‍♂️ "
+                    f"Vi que você veio pelo nosso anúncio{topic_str}. Vai ser um enorme prazer te atender!\n\n"
+                    "Para eu preparar as melhores opções: de qual **cidade** você fala e qual é o **espaço aproximado** disponível no seu terreno?"
+                )
+            return (
+                f"Olá, tudo bem? Seja muito bem-vindo(a) à Companhia dos Sonhos! 😊 "
+                f"Vi que você veio pelo nosso anúncio{topic_str}. Vai ser um enorme prazer te atender!\n\n"
+                "Para eu separar as melhores opções para você: qual **medida** você procura (solteiro, casal, queen ou king) "
+                "e você prefere um colchão mais **firme para a coluna** ou mais **macio com molas ensacadas**?"
+            )
+
         if "segmento: `psychology`" in sys_text:
             return (
                 "Olá! Seja muito bem-vindo(a) à Vizzu Psicologia. 😊\n\n"
@@ -545,14 +718,82 @@ class DeterministicSalesChatModel(BaseChatModel):
                         ],
                     )
 
-        parts: list[str] = ["Olá, boa tarde! Tudo bem? 😊"]
+        norm = f" {normalize_text(user_text)} "
+        lead_name_match = re.search(r"- Nome do lead:\s*(.+?)\.", sys_text)
+        lead_name = lead_name_match.group(1).strip() if lead_name_match else ""
+        if lead_name.lower() in ("não informado", "nao informado", "lead playground"):
+            lead_name = ""
+
+        has_ad_context = (
+            "Origem do lead: Anúncio" in sys_text
+            or "origem_anuncio=meta_ads" in sys_text
+            or "mensagem do cliente" in norm
+            or "vi no anuncio" in norm
+            or "vi a propaganda" in norm
+        )
+        ad_headline_match = re.search(r"ad_headline=([^,\n.]+)", sys_text)
+        ad_topic = ad_headline_match.group(1).strip() if ad_headline_match else None
+        if ad_topic:
+            ad_topic = re.sub(r"(?:a partir de\s*)?R\$\s*[\d.,]+", "", ad_topic, flags=re.IGNORECASE).strip(" .,-–:")
+
+        is_returning = "returning_contact=sim" in sys_text or (
+            "(recorrente)" in sys_text and "returning_contact=nao" not in sys_text
+        )
+
+        if has_ad_context:
+            topic_str = f" sobre **{ad_topic}**" if ad_topic else ""
+            greeting = (
+                f"Olá{f', {lead_name}' if lead_name else ''}, tudo bem? Seja muito bem-vindo(a)! 😊 "
+                f"Vi que você veio pelo nosso anúncio{topic_str} e vai ser um enorme prazer te atender!"
+            )
+        elif is_returning and lead_name:
+            greeting = f"Oi, {lead_name}! Que bom falar com você de novo! 😊"
+        else:
+            greeting = "Olá, boa tarde! Tudo bem? 😊"
+
+        parts: list[str] = [greeting]
+        presented_featured_highlights = False
 
         for p in payloads:
             tool_name = p.get("tool")
             data = p.get("data") or {}
             if tool_name == "search_catalog" and p.get("status") == "ok":
                 results = data.get("results") or []
-                if results:
+                is_featured_fallback = bool(data.get("featured_fallback"))
+                is_multi_highlight = is_featured_fallback or any(
+                    k in norm
+                    for k in ("outros modelos", "outro modelo", "quais modelos", "quais as opcoes", "quais opcoes", "o que voces tem")
+                )
+                if results and is_multi_highlight and len(results) >= 2:
+                    presented_featured_highlights = True
+                    highlights: list[str] = []
+                    for item in results[:3]:
+                        i_name = item.get("name", "Produto")
+                        i_id = item.get("item_id", "")
+                        i_attrs = item.get("attributes") or {}
+                        i_medidas = i_attrs.get("medidas")
+                        i_firmeza = i_attrs.get("firmeza")
+                        i_details = ", ".join(
+                            filter(None, [i_medidas, f"firmeza {i_firmeza}" if i_firmeza else None])
+                        )
+                        line = f"• **{i_name}** (`{i_id}`)"
+                        if i_details:
+                            line += f" ({i_details})"
+                        if item.get("price_available"):
+                            p_fmt = item.get("price_formatted")
+                            inst_fmt = item.get("installments_formatted")
+                            cash_fmt = item.get("cash_price_formatted")
+                            line += f" — por **{p_fmt}**"
+                            if inst_fmt:
+                                line += f" (em até **{inst_fmt}**)"
+                            if cash_fmt:
+                                line += f" ou **{cash_fmt}** à vista"
+                        highlights.append(line)
+                    parts.append(
+                        "Separei algumas das nossas **opções mais procuradas do catálogo** para você conhecer:\n"
+                        + "\n".join(highlights)
+                    )
+                elif results:
                     top = results[0]
                     name = top.get("name", "Produto")
                     item_id = top.get("item_id", "")
@@ -639,6 +880,26 @@ class DeterministicSalesChatModel(BaseChatModel):
 
         if len(parts) == 1:
             parts.append("Como posso te ajudar hoje?")
+        elif presented_featured_highlights:
+            if "segmento: `psychology`" in sys_text:
+                parts.append(
+                    "Para eu te indicar a modalidade e o profissional ideal: o atendimento seria para **adulto ou criança**, "
+                    "e você busca **psicoterapia** ou **avaliação neuropsicológica**?"
+                )
+            elif "segmento: `pools`" in sys_text:
+                parts.append(
+                    "Para eu te indicar o projeto ideal: de qual **cidade** você fala e qual é o **espaço aproximado** "
+                    "disponível no seu terreno?"
+                )
+            elif "segmento: `generic`" in sys_text:
+                parts.append(
+                    "Para eu te indicar o plano ideal: qual é o seu **segmento** e o seu principal objetivo comercial hoje?"
+                )
+            else:
+                parts.append(
+                    "Para eu te indicar o modelo perfeito para o seu descanso: qual **medida** você precisa "
+                    "(solteiro, casal, queen ou king) e qual a sua preferência de **conforto** (mais firme para a coluna ou mais macio com molas ensacadas)?"
+                )
         elif not any(p.get("tool") in ("check_available_slots", "create_booking") for p in payloads):
             if "segmento: `generic`" in sys_text:
                 parts.append("Quer agendar uma reunião rápida de diagnóstico para montarmos o plano ideal para você?")
@@ -648,18 +909,19 @@ class DeterministicSalesChatModel(BaseChatModel):
         return AIMessage(content="\n\n".join(parts))
 
 
-def create_gemini_chat_model(settings: Settings) -> BaseChatModel:
+def create_gemini_chat_model(settings: Settings, model_name: str | None = None) -> BaseChatModel:
     """Instancia o `ChatGoogleGenerativeAI` se `GOOGLE_API_KEY` estiver configurada;
-    caso contrário, retorna `DeterministicSalesChatModel`."""
+    caso contrário, retorna `DeterministicSalesChatModel` com o `model_name` selecionado."""
+    selected_model = (model_name or settings.gemini_model or "gemini-3.8-flash").strip()
     if settings.gemini_enabled and settings.google_api_key is not None:
         from langchain_google_genai import ChatGoogleGenerativeAI
 
         return ChatGoogleGenerativeAI(
-            model=settings.gemini_model,
+            model=selected_model,
             google_api_key=settings.google_api_key.get_secret_value(),
             temperature=0.2,
         )
-    return DeterministicSalesChatModel()
+    return DeterministicSalesChatModel(model_name=selected_model)
 
 
 # --------------------------------------------------------------------------- #
@@ -771,7 +1033,13 @@ class AgentNodes:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Não foi possível consultar is_human_active no CRM: %s", type(exc).__name__)
 
-        # 4. Atualiza metadados do lead a partir do lote
+        # 4. Atualiza metadados do lead a partir do lote e identifica Lead Novo vs. Lead Recorrente
+        was_returning = (
+            lead.status is not LeadStatus.NEW
+            or bool(lead.tags)
+            or any(isinstance(m, AIMessage) for m in (state.get("messages") or []))
+        )
+        lead.attributes["returning_contact"] = "sim" if was_returning else "nao"
         lead.touch()
         if lead.status is LeadStatus.NEW:
             lead.status = LeadStatus.IN_PROGRESS
@@ -787,6 +1055,8 @@ class AgentNodes:
         decision = self._jev.analyze(user_text, segment=tenant.tenant.segment)
         if decision.extracted_attributes:
             lead.attributes.update(decision.extracted_attributes)
+            if decision.extracted_attributes.get("origem_anuncio") == "meta_ads" and not lead.source:
+                lead.source = "meta_ads"
 
         updates: dict[str, Any] = {
             "lead": lead,
@@ -861,7 +1131,16 @@ class AgentNodes:
         ]
         new_messages: list[BaseMessage] = []
 
-        model_with_tools = self._llm.bind_tools(bound_tools)
+        effective_llm = self._llm
+        if isinstance(effective_llm, DeterministicSalesChatModel) and tenant.tenant.llm_model:
+            effective_llm = effective_llm.model_copy(update={"model_name": tenant.tenant.llm_model})
+        elif hasattr(effective_llm, "model") and tenant.tenant.llm_model:
+            try:
+                effective_llm = effective_llm.model_copy(update={"model": tenant.tenant.llm_model})
+            except Exception:  # noqa: BLE001
+                pass
+
+        model_with_tools = effective_llm.bind_tools(bound_tools)
         iterations = 0
         final_ai_text = ""
 
@@ -1038,12 +1317,18 @@ class AgentNodes:
                 customer_msg = existing_handoff.data.get("customer_message")
 
         # Em emergência clínica ou falha técnica, a mensagem determinística homologada é obrigatória
+        segment = Segment.GENERIC
+        try:
+            segment = self._store.get(state["tenant_id"]).tenant.segment
+        except Exception:  # noqa: BLE001
+            pass
+
         if reason is HandoffReason.CLINICAL_EMERGENCY:
             final_text = EMERGENCY_MESSAGE
         elif reason in (HandoffReason.TECHNICAL_FAILURE, HandoffReason.PRICE_UNAVAILABLE):
-            final_text = customer_msg or self._handoff.customer_message(reason, Segment.GENERIC)
+            final_text = customer_msg or self._handoff.customer_message(reason, segment)
         else:
-            final_text = state.get("reply_text") or customer_msg or self._handoff.customer_message(reason, Segment.GENERIC)
+            final_text = state.get("reply_text") or customer_msg or self._handoff.customer_message(reason, segment)
 
         return {
             "lead": lead,

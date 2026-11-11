@@ -167,7 +167,9 @@ async def test_search_category_filter_and_no_match(catalog):
     assert {x["item_id"] for x in r.data["results"]} == {"VELHO", "CONSULTA"}
 
     none = await catalog.search_catalog("loja-teste", "geladeira frost free")
-    assert none.status is ToolStatus.NOT_FOUND and none.requires_human
+    assert none.status is ToolStatus.OK and not none.requires_human
+    assert none.data["featured_fallback"] is True
+    assert "Itens mais procurados e populares do catálogo retornados" in (none.agent_instruction or "")
 
     empty = await catalog.search_catalog("loja-teste", "   ")
     assert empty.status is ToolStatus.INVALID_INPUT

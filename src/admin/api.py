@@ -55,6 +55,7 @@ class SandboxUpdate(BaseModel):
     debounce_silence_seconds: float | None = None
     debounce_max_window_seconds: float | None = None
     split_messages: bool | None = None
+    llm_model: str | None = None
 
 
 class SimulateIn(BaseModel):
@@ -136,6 +137,7 @@ def _tenant_summary(t: TenantData) -> dict[str, Any]:
         "debounce_silence_seconds": t.tenant.debounce_silence_seconds,
         "debounce_max_window_seconds": t.tenant.debounce_max_window_seconds,
         "split_messages": t.tenant.split_messages,
+        "llm_model": t.tenant.llm_model,
         "items": len(t.catalog.items),
         "delivery_zones": len(t.delivery.zones),
         "services": len(t.calendar.services) if t.calendar else 0,
@@ -230,6 +232,8 @@ async def sandbox_put(request: Request, body: SandboxUpdate) -> Any:
     if new_config.debounce_max_window_seconds is not None:
         st.buffer.max_window_seconds = new_config.debounce_max_window_seconds
     st.settings.split_messages = new_config.split_messages
+    if new_config.llm_model:
+        st.settings.gemini_model = new_config.llm_model
     return await sandbox.status()
 
 

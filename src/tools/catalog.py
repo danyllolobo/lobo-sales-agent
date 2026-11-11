@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime, timedelta
-from decimal import ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
@@ -47,6 +47,12 @@ _UFS = frozenset(
 PRICE_SHOW_INSTRUCTION = (
     "Use EXATAMENTE os valores formatados retornados (campos *_formatted). "
     "Não arredonde, não some, não ofereça descontos além do retornado."
+)
+
+FEATURED_FALLBACK_INSTRUCTION = (
+    "Itens mais procurados e populares do catálogo retornados. "
+    "Apresente brevemente as opções principais e faça uma pergunta consultiva "
+    "para identificar a real necessidade do cliente."
 )
 
 
@@ -159,38 +165,50 @@ class CatalogService:
         tool = "search_catalog"
         data = self._store.get(tenant_id)
         catalog = data.catalog
-        text = " ".join(filter(None, [query, *(keywords or [])]))
-        tokens = tokenize(text)
-        if not tokens and not category:
+        text = " ".join(filter(None, [query, *(keywords or [])])).strip()
+        if not text and not category:
             return ToolResult.invalid(tool, tenant_id, "informe uma busca (query/keywords) ou categoria")
 
+        tokens = tokenize(text)
         synonyms = _synonym_map(catalog)
         terms = _expand(tokens, synonyms)
         wanted_category = normalize_text(category) if category else None
 
         ranked: list[tuple[int, CatalogItem]] = []
-        for item in catalog.items:
-            if not item.active:
-                continue
-            if wanted_category and normalize_text(item.category) != wanted_category:
-                continue
-            score = score_item(item, terms, synonyms) if terms else 1
-            if score > 0:
-                ranked.append((score, item))
-        # Ordem determinística: relevância ↓, em estoque primeiro, item_id ↑
-        ranked.sort(key=lambda p: (-p[0], not p[1].in_stock, p[1].item_id))
+        if terms or wanted_category:
+            for item in catalog.items:
+                if not item.active:
+                    continue
+                if wanted_category and normalize_text(item.category) != wanted_category:
+                    continue
+                score = score_item(item, terms, synonyms) if terms else 1
+                if score > 0:
+                    ranked.append((score, item))
+            # Ordem determinística: relevância ↓, em estoque primeiro, item_id ↑
+            ranked.sort(key=lambda p: (-p[0], not p[1].in_stock, p[1].item_id))
 
         if not ranked:
-            return ToolResult.needs_human(
+            # REGRA INVIOLÁVEL: search_catalog NUNCA retorna requires_human=True por falta de match exato.
+            # Faz fallback automático para os 3 carros-chefes (featured=True / em estoque com maior margem/procura).
+            fallback_items = self._select_featured_items(catalog, wanted_category, limit=min(3, limit))
+            if not fallback_items:
+                return ToolResult(
+                    tool=tool,
+                    tenant_id=tenant_id,
+                    status=ToolStatus.NOT_FOUND,
+                    requires_human=False,
+                    reason="empty_catalog",
+                    data={"results": [], "total": 0},
+                    agent_instruction=FEATURED_FALLBACK_INSTRUCTION,
+                )
+            results = [self._item_summary(catalog, item, 1) for item in fallback_items]
+            return ToolResult.success(
                 tool,
                 tenant_id,
-                ToolStatus.NOT_FOUND,
-                "no_catalog_match",
-                instruction=(
-                    "Nenhum produto/serviço do catálogo corresponde à busca. NÃO invente opções nem preços: "
-                    "faça uma pergunta para refinar a necessidade ou acione o handoff humano."
-                ),
+                {"results": results, "total": len(results), "featured_fallback": True},
+                instruction=FEATURED_FALLBACK_INSTRUCTION,
             )
+
         results = [self._item_summary(catalog, item, score) for score, item in ranked[:limit]]
         return ToolResult.success(tool, tenant_id, {"results": results, "total": len(ranked)}, instruction=PRICE_SHOW_INSTRUCTION)
 
@@ -326,11 +344,38 @@ class CatalogService:
         }
         return {k: v for k, v in payload.items() if v is not None}
 
+    def _select_featured_items(
+        self,
+        catalog: CatalogConfig,
+        wanted_category: str | None,
+        *,
+        limit: int = 3,
+    ) -> list[CatalogItem]:
+        """Seleciona os carros-chefes (featured=True ou em estoque com maior margem/procura)."""
+        candidates = [
+            item
+            for item in catalog.items
+            if item.active and (not wanted_category or normalize_text(item.category) == wanted_category)
+        ]
+        if not candidates and wanted_category:
+            candidates = [item for item in catalog.items if item.active]
+        candidates.sort(
+            key=lambda it: (
+                not it.featured,
+                not it.in_stock,
+                self._price_problem(catalog, it.price) is not None,
+                -(it.price.amount or Decimal(0)),
+                it.item_id,
+            )
+        )
+        return candidates[: max(1, limit)]
+
     def _item_summary(self, catalog: CatalogConfig, item: CatalogItem, score: int) -> dict[str, Any]:
         summary: dict[str, Any] = {
             "item_id": item.item_id,
             "name": item.name,
             "category": item.category,
+            "featured": item.featured,
             "attributes": item.attributes,
             "in_stock": item.in_stock,
             "relevance": score,
@@ -351,6 +396,7 @@ __all__ = [
     "CatalogSearchInput",
     "CatalogService",
     "DeliveryQueryInput",
+    "FEATURED_FALLBACK_INSTRUCTION",
     "PriceQueryInput",
     "tokenize",
 ]

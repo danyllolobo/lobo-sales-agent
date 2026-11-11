@@ -88,10 +88,30 @@ _DISCOUNT_BARGAIN_PATTERNS: tuple[str, ...] = (
     "20 de desconto",
     "25 de desconto",
     "30 de desconto",
+    "desconto de 15",
+    "desconto de 20",
+    "desconto de 25",
+    "desconto de 30",
+    "30 a vista",
+    "25 a vista",
+    "20 a vista",
     "metade do preco",
     "baixar esse valor",
     "baixar o preco",
     "tem chorinho",
+)
+
+_PRICE_OBJECTION_PATTERNS: tuple[str, ...] = (
+    "achei caro",
+    "ta caro",
+    "esta caro",
+    "muito caro",
+    "ficou caro",
+    "valor alto",
+    "preco alto",
+    "acima do meu orcamento",
+    "pesado no orcamento",
+    "fora do meu orcamento",
 )
 
 _BOOKING_KEYWORDS: tuple[str, ...] = (
@@ -180,6 +200,18 @@ _CATALOG_KEYWORDS: tuple[str, ...] = (
     "catalogo",
     "parcela",
     "parcelado",
+    "outros modelos",
+    "outro modelo",
+    "quais modelos",
+    "quais as opcoes",
+    "quais opcoes",
+    "o que voces tem",
+    "tem promocao",
+    "quero saber mais",
+    "to pesquisando",
+    "estou pesquisando",
+    "vi a propaganda",
+    "vi no anuncio",
     # Agência (tenant `loboads`)
     "trafego",
     "anuncio",
@@ -276,6 +308,46 @@ def extract_lead_attributes(text: str, segment: Segment = Segment.GENERIC) -> di
         elif any(k in norm for k in (" terapia ", " psicoterapia ", " sessao ", " psicologo ", " psicologa ")):
             attrs["modalidade_interesse"] = "psicoterapia"
 
+    # Detecção de template de anúncio (Meta Ads / Instagram CTWA no corpo da mensagem)
+    ad_title_match = re.search(
+        r"(?:t[íi]tulo do an[úu]ncio|an[úu]ncio)\s*[:\-–]\s*([^\n\r]+)",
+        unquoted,
+        flags=re.IGNORECASE,
+    )
+    if ad_title_match:
+        attrs["origem_anuncio"] = "meta_ads"
+        raw_headline = re.sub(
+            r"(?:a partir de\s*)?R\$\s*[\d.,]+",
+            "",
+            ad_title_match.group(1),
+            flags=re.IGNORECASE,
+        ).strip(" .,-–:")
+        if raw_headline:
+            attrs["ad_headline"] = raw_headline[:120]
+    elif "mensagem do cliente" in norm:
+        attrs["origem_anuncio"] = "meta_ads"
+        ad_parts = re.split(r"mensagem do cliente\s*:", unquoted, maxsplit=1, flags=re.IGNORECASE)
+        if len(ad_parts) == 2:
+            raw_headline = re.sub(
+                r"(?:a partir de\s*)?R\$\s*[\d.,]+",
+                "",
+                ad_parts[0],
+                flags=re.IGNORECASE,
+            ).strip(" .,-–:\n\r")
+            if raw_headline:
+                attrs["ad_headline"] = raw_headline[:120]
+    elif any(
+        k in norm
+        for k in (
+            " vi no anuncio ",
+            " vi a propaganda ",
+            " vi no instagram ",
+            " anuncio do instagram ",
+            " outros modelos ",
+        )
+    ):
+        attrs["origem_anuncio"] = "meta_ads"
+
     return attrs
 
 
@@ -330,7 +402,20 @@ class JEVGuard:
                     extracted_attributes=attrs,
                 )
 
-        # 4. Roteamento de estágio comercial
+        # 4. Objeção de preço ("Achei caro", "Tá caro") -> NUNCA aciona handoff imediato;
+        # direciona para quebra consultiva de objeção (valor, durabilidade, saúde, frete e parcelamento).
+        for pattern in _PRICE_OBJECTION_PATTERNS:
+            if pattern in norm:
+                return JEVDecision(
+                    intent=AgentIntent.PRICE_OBJECTION,
+                    stage=ConversationStage.OFFER_CATALOG,
+                    immediate_handoff=False,
+                    summary="Lead apresentou objeção de preço; requer argumentação consultiva de valor.",
+                    confidence=0.95,
+                    extracted_attributes=attrs,
+                )
+
+        # 5. Roteamento de estágio comercial
         has_booking = any(k in norm for k in _BOOKING_KEYWORDS)
         has_catalog = any(f" {k} " in norm or k in norm for k in _CATALOG_KEYWORDS)
         has_delivery = any(k in norm for k in _DELIVERY_KEYWORDS)

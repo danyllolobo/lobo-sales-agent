@@ -660,6 +660,16 @@ def split_human_chunks(text: str, max_chars: int = 400, max_chunks: int = 4) -> 
 # --------------------------------------------------------------------------- #
 # Tenant
 # --------------------------------------------------------------------------- #
+SUPPORTED_LLM_MODELS: tuple[str, ...] = (
+    "gemini-3.8-flash",
+    "gemini-2.5-pro",
+    "gemini-3-pro",
+    "gemini-4-argon",
+    "gpt-4o",
+    "gpt-4o-mini",
+)
+
+
 class TenantConfig(BaseModel):
     """Configuração de um cliente da agência (multi-tenant)."""
 
@@ -673,6 +683,9 @@ class TenantConfig(BaseModel):
     crm_provider: CRMProvider = CRMProvider.NONE
     timezone: str = "America/Sao_Paulo"
     active: bool = True
+
+    # Modelo de IA do cliente (Flash p/ velocidade ou Pro p/ raciocínio profundo)
+    llm_model: str = Field(default="gemini-3.8-flash", min_length=1)
 
     # Sobrescrevem os padrões globais de `Settings` quando definidos
     debounce_silence_seconds: float | None = Field(default=None, ge=1.0, le=30.0)

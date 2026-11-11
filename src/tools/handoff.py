@@ -57,26 +57,44 @@ REASON_LABELS: dict[HandoffReason, str] = {
 
 CUSTOMER_MESSAGES: dict[HandoffReason, str] = {
     HandoffReason.CUSTOMER_REQUEST: (
-        "Claro! Já chamei uma pessoa da nossa equipe para continuar seu atendimento. "
-        "Em instantes você será atendido(a) por aqui. 😊"
+        "Claro! Já chamei uma pessoa da nossa supervisão aqui da equipe para dar sequência "
+        "ao seu atendimento. Só um instante! 😊"
     ),
     HandoffReason.UNKNOWN_ANSWER: (
-        "Ótima pergunta! Quero te passar a informação certinha, então já chamei um(a) especialista "
-        "da nossa equipe, que vai te responder por aqui em instantes."
+        "Ótima pergunta! Para te passar essa informação com total precisão, vou alinhar agora "
+        "mesmo com o meu gerente comercial e já te retorno com os detalhes!"
     ),
     HandoffReason.DISCOUNT_NEGOTIATION: (
-        "Condições especiais são liberadas pela nossa equipe comercial. Já chamei um(a) consultor(a) "
-        "para conversar com você por aqui!"
+        "Essa condição exclusiva foge da minha alçada de consultor. Vou conversar diretamente "
+        "com o meu gerente comercial aqui da nossa equipe comercial agora para ver se ele autoriza "
+        "essa condição especial para você, combinado? Só um instante enquanto ele valida!"
     ),
     HandoffReason.PRICE_UNAVAILABLE: (
-        "Para te passar o valor certinho, vou confirmar com a nossa equipe e já te retornamos por aqui, combinado?"
+        "Para te passar o orçamento personalizado certinho, vou validar agora mesmo com o meu "
+        "gerente comercial e já te retorno por aqui com os detalhes, combinado?"
     ),
     HandoffReason.TECHNICAL_FAILURE: (
-        "Tivemos uma instabilidade por aqui, mas já chamei uma pessoa da equipe para continuar "
-        "seu atendimento. Só um instante, por favor!"
+        "Tivemos uma rápida instabilidade por aqui, mas já chamei uma pessoa da nossa supervisão "
+        "para continuar seu atendimento agora mesmo. Só um instante, por favor!"
     ),
     HandoffReason.OTHER: (
-        "Já chamei uma pessoa da nossa equipe para continuar seu atendimento. Em instantes você será atendido(a) por aqui."
+        "Vou alinhar esse detalhe com o meu gerente comercial da nossa equipe e já te retorno "
+        "por aqui em instantes!"
+    ),
+}
+
+PSYCHOLOGY_ESCALATION_MESSAGES: dict[HandoffReason, str] = {
+    HandoffReason.UNKNOWN_ANSWER: (
+        "Para te direcionar ao profissional com a abordagem mais assertiva para o seu caso, "
+        "vou alinhar essa especificidade com a nossa coordenação clínica e já te retorno com os detalhes!"
+    ),
+    HandoffReason.PRICE_UNAVAILABLE: (
+        "Para te direcionar ao profissional com a abordagem mais assertiva para o seu caso, "
+        "vou alinhar os detalhes desse protocolo com a nossa coordenação clínica e já te retorno!"
+    ),
+    HandoffReason.DISCOUNT_NEGOTIATION: (
+        "Essa condição especial foge da minha alçada aqui no acolhimento. Vou conversar diretamente "
+        "com a nossa coordenação clínica agora para ver se conseguimos autorizar para você, combinado? Só um instante!"
     ),
 }
 
@@ -298,6 +316,8 @@ class HandoffService:
     def customer_message(reason: HandoffReason, segment: Segment) -> str:
         if reason is HandoffReason.CLINICAL_EMERGENCY:
             return EMERGENCY_MESSAGE
+        if segment is Segment.PSYCHOLOGY and reason in PSYCHOLOGY_ESCALATION_MESSAGES:
+            return PSYCHOLOGY_ESCALATION_MESSAGES[reason]
         return CUSTOMER_MESSAGES.get(reason, CUSTOMER_MESSAGES[HandoffReason.OTHER])
 
     def build_note(

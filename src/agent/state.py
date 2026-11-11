@@ -47,6 +47,7 @@ class AgentIntent(StrEnum):
     GREETING = "greeting"
     DISCOVERY = "discovery"
     CATALOG_PRICE = "catalog_price"
+    PRICE_OBJECTION = "price_objection"
     DELIVERY = "delivery"
     BUSINESS_INFO = "business_info"
     BOOKING = "booking"

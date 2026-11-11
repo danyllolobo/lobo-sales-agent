@@ -84,9 +84,20 @@
               <span>Sessão de teste (min)</span>
               <input id="sandbox-ttl" type="number" min="1" max="1440">
             </label>
-            <label class="field span-3">
+            <label class="field span-2">
               <span>Comandos de parada / reset</span>
               <input id="sandbox-stops" placeholder="/parar, /reset">
+            </label>
+            <label class="field">
+              <span>Modelo de IA Padrão (Flash vs. Pro)</span>
+              <select id="sandbox-llm-model">
+                <option value="gemini-3.8-flash">⚡ Gemini 3.8 Flash (Padrão: ultra-rápido)</option>
+                <option value="gemini-2.5-pro">🧠 Gemini 2.5 Pro (Raciocínio profundo)</option>
+                <option value="gemini-3-pro">🧠 Gemini 3 Pro (Negociação avançada)</option>
+                <option value="gemini-4-argon">🚀 Gemini 4 Argon (Máxima conversão)</option>
+                <option value="gpt-4o">🤖 GPT-4o (Fallback OpenAI Pro)</option>
+                <option value="gpt-4o-mini">⚡ GPT-4o Mini (Fallback OpenAI Rápido)</option>
+              </select>
             </label>
             <label class="field">
               <span class="row-between"><span>Tempo de Silêncio do Debounce</span><strong id="sandbox-silence-val" class="mono">8s</strong></span>

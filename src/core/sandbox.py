@@ -75,6 +75,7 @@ class SandboxConfig(BaseModel):
     debounce_silence_seconds: float | None = Field(default=None, ge=1.0, le=30.0)
     debounce_max_window_seconds: float | None = Field(default=None, ge=2.0, le=60.0)
     split_messages: bool = True
+    llm_model: str = Field(default="gemini-3.8-flash", min_length=1)
     updated_at: datetime | None = None
 
     @field_validator("allowed_phones", mode="before")
