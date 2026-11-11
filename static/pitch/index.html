@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lobo Sales Agent | Apresentação Comercial de Alto Impacto</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#f0f9ff',
+              100: '#e0f2fe',
+              500: '#0ea5e9',
+              600: '#0284c7',
+              700: '#0369a1',
+              900: '#0c4a6e',
+            },
+            accent: {
+              emerald: '#10b981',
+              amber: '#f59e0b',
+              rose: '#f43f5e',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Transições suaves entre slides */
+    .slide {
+      display: none;
+      opacity: 0;
+      transform: translateY(16px);
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .slide.active {
+      display: flex;
+      opacity: 1;
+      transform: translateY(0);
+    }
+    /* Estilo de Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 9999px;
+    }
+    /* Simulação de balões do WhatsApp */
+    .wa-bubble-in {
+      background-color: #202c33;
+      border-radius: 0 12px 12px 12px;
+      position: relative;
+    }
+    .wa-bubble-out {
+      background-color: #005c4b;
+      border-radius: 12px 0 12px 12px;
+      position: relative;
+    }
+  </style>
+</head>
+<body class="bg-[#090d16] text-slate-100 font-sans antialiased min-h-screen flex flex-col justify-between overflow-x-hidden select-none">
+
+  <!-- ===================================================================== -->
+  <!-- TOPBAR DE NAVEGAÇÃO -->
+  <!-- ===================================================================== -->
+  <header class="w-full px-6 py-4 flex items-center justify-between border-b border-slate-800/80 bg-[#090d16]/90 backdrop-blur z-50">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center font-bold text-slate-950 shadow-lg shadow-blue-500/20">
+        🐺
+      </div>
+      <div>
+        <span class="font-extrabold tracking-tight text-white text-base">LOBO ADS</span>
+        <span class="text-xs px-2 py-0.5 ml-2 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 font-medium tracking-wide">SALES AGENT</span>
+      </div>
+    </div>
+
+    <!-- Indicador de Slide & Ações -->
+    <div class="flex items-center gap-4">
+      <div class="text-xs font-mono text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg flex items-center gap-2">
+        <span class="text-blue-400 font-bold" id="currentSlideNum">1</span>
+        <span class="text-slate-600">/</span>
+        <span id="totalSlidesNum">8</span>
+      </div>
+
+      <button onclick="toggleNotesModal()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700/80 flex items-center gap-1.5 transition" title="Ver roteiro do que falar (Tecla N)">
+        <i data-lucide="book-open" class="w-3.5 h-3.5 text-blue-400"></i>
+        <span class="hidden sm:inline">Roteiro do Apresentador</span>
+      </button>
+
+      <button onclick="toggleFullscreen()" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition" title="Tela Cheia (Tecla F)">
+        <i data-lucide="maximize-2" class="w-4 h-4"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- ===================================================================== -->
+  <!-- ÁREA PRINCIPAL DOS SLIDES -->
+  <!-- ===================================================================== -->
+  <main class="flex-1 w-full max-w-6xl mx-auto px-6 py-8 flex flex-col justify-center">
+
+    <!-- SLIDE 1: CAPA DE IMPACTO -->
+    <section class="slide active flex-col items-center text-center justify-center py-8">
+      <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-semibold mb-6 animate-pulse">
+        <i data-lucide="zap" class="w-3.5 h-3.5"></i>
+        <span>OPERAÇÃO COMERCIAL 24/7 COM INTELIGÊNCIA ARTIFICIAL</span>
+      </div>
+
+      <h1 class="text-4xl sm:text-6xl font-extrabold text-white tracking-tight leading-[1.15] max-w-4xl mb-6">
+        A Sua Equipe de Vendas no WhatsApp que <span class="bg-gradient-to-r from-blue-400 via-cyan-300 to-emerald-400 bg-clip-text text-transparent">Não Dorme, Não Falta e Não Perde Clientes.</span>
+      </h1>
+
+      <p class="text-base sm:text-xl text-slate-400 max-w-2xl leading-relaxed mb-10 font-normal">
+        Transforme os contatos que chegam dos seus anúncios em compras reais no caixa — com respostas humanas em 4 segundos, compreensão de áudios e técnica de fechamento.
+      </p>
+
+      <div class="flex flex-wrap items-center justify-center gap-4">
+        <button onclick="nextSlide()" class="px-8 py-4 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-slate-950 font-bold text-base shadow-lg shadow-blue-500/25 flex items-center gap-2 transition transform hover:-translate-y-0.5">
+          <span>Iniciar Apresentação</span>
+          <i data-lucide="arrow-right" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="mt-14 grid grid-cols-3 gap-6 sm:gap-12 text-slate-400 border-t border-slate-800/80 pt-8 max-w-2xl w-full">
+        <div>
+          <div class="text-2xl font-extrabold text-white">4 seg</div>
+          <div class="text-xs text-slate-500 mt-1">Tempo médio de resposta</div>
+        </div>
+        <div>
+          <div class="text-2xl font-extrabold text-emerald-400">100%</div>
+          <div class="text-xs text-slate-500 mt-1">Compreensão de áudios</div>
+        </div>
+        <div>
+          <div class="text-2xl font-extrabold text-blue-400">24 / 7</div>
+          <div class="text-xs text-slate-500 mt-1">Sem intervalo ou feriado</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 2: O DIAGNÓSTICO DOLOROSO -->
+    <section class="slide flex-col justify-center py-4">
+      <div class="mb-8">
+        <span class="text-xs font-bold text-rose-400 tracking-wider uppercase bg-rose-500/10 px-3 py-1 rounded-full border border-rose-500/20">O Diagnóstico Real</span>
+        <h2 class="text-3xl sm:text-4xl font-extrabold text-white mt-3">Onde o Seu Dinheiro Está Sangrando Hoje?</h2>
+        <p class="text-slate-400 mt-2 text-base">Você investe em anúncios, o lead clica interessado... e morre no WhatsApp por 3 motivos operacionais:</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <!-- Dor 1 -->
+        <div class="p-6 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-rose-500/40 transition">
+          <div class="w-12 h-12 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center mb-4">
+            <i data-lucide="clock" class="w-6 h-6"></i>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-2">A Demora Fatal</h3>
+          <p class="text-sm text-slate-400 leading-relaxed">
+            Se você demora mais de <b>5 minutos</b> para responder, a probabilidade de fechamento cai em até <b>80%</b>. O consumidor moderno compra de quem responde primeiro.
+          </p>
+        </div>
+
+        <!-- Dor 2 -->
+        <div class="p-6 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-amber-500/40 transition">
+          <div class="w-12 h-12 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center mb-4">
+            <i data-lucide="moon" class="w-6 h-6"></i>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-2">O Apagão Noturno</h3>
+          <p class="text-sm text-slate-400 leading-relaxed">
+            Mais de <b>42% dos cliques em anúncios</b> ocorrem fora do horário comercial (noites, domingos e almoço). Se a sua loja está fechada, o seu dinheiro de marketing foi pro lixo.
+          </p>
+        </div>
+
+        <!-- Dor 3 -->
+        <div class="p-6 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-cyan-500/40 transition">
+          <div class="w-12 h-12 rounded-xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center mb-4">
+            <i data-lucide="message-square-off" class="w-6 h-6"></i>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-2">Respostas Frias e Sem Técnica</h3>
+          <p class="text-sm text-slate-400 leading-relaxed">
+            Atendente cansado que só responde <i>"Tenho sim"</i> ou <i>"Tá R$ 1.200"</i> e nunca mais faz perguntas de qualificação nem conduz para o fechamento.
+          </p>
+        </div>
+      </div>
+
+      <div class="mt-8 p-4 rounded-xl bg-slate-900 border border-slate-800 flex items-center gap-4">
+        <i data-lucide="alert-triangle" class="w-6 h-6 text-amber-400 flex-shrink-0"></i>
+        <p class="text-sm text-slate-300">
+          <b>Resultado direto:</b> Para cada 100 pessoas que mandam mensagem querendo comprar, até <b>70 são perdidas</b> puramente por falha de velocidade e atendimento.
+        </p>
+      </div>
+    </section>
+
+    <!-- SLIDE 3: O COMPARATIVO -->
+    <section class="slide flex-col justify-center py-4">
+      <div class="mb-6">
+        <span class="text-xs font-bold text-blue-400 tracking-wider uppercase bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20">A Comparação Clara</span>
+        <h2 class="text-3xl font-extrabold text-white mt-3">Por Que Robôs Comuns e Atendentes CLT Não Resolvem?</h2>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <!-- Chatbot Comum -->
+        <div class="p-6 rounded-2xl bg-slate-900/50 border border-slate-800 opacity-80">
+          <div class="flex items-center gap-2 text-rose-400 font-bold text-sm mb-3">
+            <i data-lucide="x-circle" class="w-4 h-4"></i>
+            <span>Chatbot Tradicional ("Digite 1")</span>
+          </div>
+          <ul class="text-xs text-slate-400 space-y-2.5">
+            <li>❌ Irrita o cliente com menus engessados</li>
+            <li>❌ Não entende áudios de jeito nenhum</li>
+            <li>❌ Manda "textões" que ninguém lê</li>
+            <li>❌ Não sabe negociar, dar desconto ou frete</li>
+            <li>❌ Causa abandono imediato do cliente</li>
+          </ul>
+        </div>
+
+        <!-- Atendente Humano -->
+        <div class="p-6 rounded-2xl bg-slate-900/50 border border-slate-800 opacity-80">
+          <div class="flex items-center gap-2 text-amber-400 font-bold text-sm mb-3">
+            <i data-lucide="user" class="w-4 h-4"></i>
+            <span>Atendente Humano CLT</span>
+          </div>
+          <ul class="text-xs text-slate-400 space-y-2.5">
+            <li>⚠️ Atende apenas 1 pessoa por vez com atenção</li>
+            <li>⚠️ Custa R$ 2.500+ com encargos, férias e 13º</li>
+            <li>⚠️ Não atende de madrugada nem fins de semana</li>
+            <li>⚠️ Sofre com cansaço, humor e desmotivação</li>
+            <li>⚠️ Esquece de fazer o follow-up dos clientes</li>
+          </ul>
+        </div>
+
+        <!-- Lobo Sales Agent -->
+        <div class="p-6 rounded-2xl bg-gradient-to-b from-blue-950/40 to-slate-900 border-2 border-blue-500 shadow-xl shadow-blue-500/10 relative">
+          <div class="absolute -top-3 right-4 px-2 py-0.5 rounded-full bg-blue-500 text-slate-950 font-extrabold text-[10px] uppercase">
+            Solução LoboAds
+          </div>
+          <div class="flex items-center gap-2 text-emerald-400 font-bold text-sm mb-3">
+            <i data-lucide="check-circle-2" class="w-4 h-4"></i>
+            <span>Lobo AI Sales Agent</span>
+          </div>
+          <ul class="text-xs text-slate-300 space-y-2.5 font-medium">
+            <li>✅ <b>Respostas em 4 segundos</b> (24h por dia)</li>
+            <li>✅ <b>Ouve e compreende áudios</b> com qualquer sotaque</li>
+            <li>✅ <b>Cadência humana:</b> digitação e mensagens picotadas</li>
+            <li>✅ <b>Vendedor Closer:</b> tabela de preços, Pix e até 10x</li>
+            <li>✅ <b>Inteligência de frete</b> e localização da loja física</li>
+            <li>✅ <b>Escalação elegante:</b> alinha com o gerente</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 4: O TESTE DE TURING NO WHATSAPP (DEMO VIVA) -->
+    <section class="slide flex-col justify-center py-4">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+        <!-- Texto explicativo -->
+        <div class="lg:col-span-5">
+          <span class="text-xs font-bold text-emerald-400 tracking-wider uppercase bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">Hiper-Humanização</span>
+          <h2 class="text-3xl font-extrabold text-white mt-3">O Cliente Tem Certeza de que Está Falando com um Humano.</h2>
+          <p class="text-slate-400 text-sm mt-3 leading-relaxed">
+            Nada de frases mecânicas como <i>"Sou um assistente virtual"</i>. O Lobo Sales Agent age como um consultor da sua loja física:
+          </p>
+
+          <div class="mt-6 space-y-3 text-xs text-slate-300">
+            <div class="flex items-start gap-2.5">
+              <i data-lucide="check" class="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0"></i>
+              <span><b>Confirmação de leitura azul:</b> Marca a mensagem como lida na hora.</span>
+            </div>
+            <div class="flex items-start gap-2.5">
+              <i data-lucide="check" class="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0"></i>
+              <span><b>Status "Digitando..." real:</b> Pausa natural calculada conforme o tamanho da resposta.</span>
+            </div>
+            <div class="flex items-start gap-2.5">
+              <i data-lucide="check" class="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0"></i>
+              <span><b>Mensagens em balões confortáveis:</b> Nunca manda blocos gigantescos de uma só vez.</span>
+            </div>
+            <div class="flex items-start gap-2.5">
+              <i data-lucide="check" class="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0"></i>
+              <span><b>Escalação Inteligente:</b> <i>"Vou falar com o meu gerente comercial agora para ver se ele libera esse desconto pra você!"</i></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mockup do WhatsApp -->
+        <div class="lg:col-span-7 bg-[#111b21] p-4 rounded-3xl border border-slate-800 shadow-2xl max-w-md mx-auto w-full">
+          <!-- Topo do Chat -->
+          <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center font-bold text-white">
+                CS
+              </div>
+              <div>
+                <div class="text-sm font-bold text-white">Companhia dos Sonhos</div>
+                <div class="text-[11px] text-emerald-400 flex items-center gap-1">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                  <span>online (respondendo em 4s)</span>
+                </div>
+              </div>
+            </div>
+            <i data-lucide="phone" class="w-4 h-4 text-slate-400"></i>
+          </div>
+
+          <!-- Mensagens Simuladas -->
+          <div class="py-4 space-y-3 text-xs">
+            <!-- Lead Audio -->
+            <div class="flex justify-end">
+              <div class="wa-bubble-out p-3 text-white max-w-[85%] shadow">
+                <div class="flex items-center gap-2 mb-1">
+                  <i data-lucide="mic" class="w-4 h-4 text-emerald-200"></i>
+                  <span class="font-medium text-[11px]">Áudio (0:14)</span>
+                </div>
+                <div class="text-[11px] text-slate-200 italic">"Vocês têm colchão ortopédico de casal? E entregam aqui no Tapanã?"</div>
+                <div class="text-[9px] text-emerald-300 text-right mt-1">19:42 ✓✓</div>
+              </div>
+            </div>
+
+            <!-- Bot Balão 1 -->
+            <div class="flex justify-start">
+              <div class="wa-bubble-in p-3 text-slate-200 max-w-[85%] shadow">
+                Olá! Tudo ótimo por aqui? Seja muito bem-vindo(a) à Companhia dos Sonhos! 😊
+                <div class="text-[9px] text-slate-400 text-right mt-1">19:42</div>
+              </div>
+            </div>
+
+            <!-- Bot Balão 2 -->
+            <div class="flex justify-start">
+              <div class="wa-bubble-in p-3 text-slate-200 max-w-[85%] shadow">
+                Temos sim! O nosso destaque é o <b>Colchão Ortopédico Firme Casal (138x188)</b> com suporte especial para coluna. Ele sai por <b>R$ 1.299,00</b> em até 10x sem juros ou com desconto no Pix à vista!
+                <div class="text-[9px] text-slate-400 text-right mt-1">19:42</div>
+              </div>
+            </div>
+
+            <!-- Bot Balão 3 -->
+            <div class="flex justify-start">
+              <div class="wa-bubble-in p-3 text-slate-200 max-w-[85%] shadow">
+                E sobre a entrega: para o <b>bairro do Tapanã nós fazemos com ENTREGA GRÁTIS</b> no mesmo dia ou no máximo em 24h úteis! 🚚<br/><br/>
+                Você prefere garantir esse modelo com frete grátis ou dar um pulinho aqui na nossa loja na Tavares Bastos (Marambaia) para deitar nele e fazer o teste de conforto?
+                <div class="text-[9px] text-slate-400 text-right mt-1">19:43</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 5: COMO ELE VENDE O SEU PRODUTO (SDR & CLOSER) -->
+    <section class="slide flex-col justify-center py-4">
+      <div class="mb-8">
+        <span class="text-xs font-bold text-cyan-400 tracking-wider uppercase bg-cyan-500/10 px-3 py-1 rounded-full border border-cyan-500/20">Metodologia Comercial</span>
+        <h2 class="text-3xl font-extrabold text-white mt-3">Ele Não Apenas Responde. Ele Conduz a Venda.</h2>
+        <p class="text-slate-400 text-sm mt-2">Seguindo os mesmos passos dos melhores vendedores consultivos do Brasil:</p>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Passo 1 -->
+        <div class="p-5 rounded-2xl bg-slate-900 border border-slate-800">
+          <div class="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-400 font-bold flex items-center justify-center text-sm mb-3">1</div>
+          <h4 class="font-bold text-white text-sm mb-1.5">Acolhimento Caloroso</h4>
+          <p class="text-xs text-slate-400 leading-relaxed">Primeira impressão impecável em até 4 segundos. Educação, energia positiva e foco imediato no cliente.</p>
+        </div>
+
+        <!-- Passo 2 -->
+        <div class="p-5 rounded-2xl bg-slate-900 border border-slate-800">
+          <div class="w-8 h-8 rounded-lg bg-cyan-500/10 text-cyan-400 font-bold flex items-center justify-center text-sm mb-3">2</div>
+          <h4 class="font-bold text-white text-sm mb-1.5">Descoberta Ativa</h4>
+          <p class="text-xs text-slate-400 leading-relaxed">Identifica o que o cliente realmente precisa (tamanho, dores na coluna, medidas, urgência e orçamento).</p>
+        </div>
+
+        <!-- Passo 3 -->
+        <div class="p-5 rounded-2xl bg-slate-900 border border-slate-800">
+          <div class="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-400 font-bold flex items-center justify-center text-sm mb-3">3</div>
+          <h4 class="font-bold text-white text-sm mb-1.5">Apresentação de Oferta</h4>
+          <p class="text-xs text-slate-400 leading-relaxed">Recomenda os melhores modelos com preços à vista e parcelamento em 10x sem juros no cartão.</p>
+        </div>
+
+        <!-- Passo 4 -->
+        <div class="p-5 rounded-2xl bg-slate-900 border border-slate-800">
+          <div class="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-400 font-bold flex items-center justify-center text-sm mb-3">4</div>
+          <h4 class="font-bold text-white text-sm mb-1.5">Quebra de Objeção</h4>
+          <p class="text-xs text-slate-400 leading-relaxed">Resolve dúvidas de frete por bairro, tempo de entrega, garantia de fábrica e convida para a loja física.</p>
+        </div>
+      </div>
+
+      <div class="mt-6 p-4 rounded-xl bg-blue-950/30 border border-blue-500/30 flex items-center gap-3">
+        <i data-lucide="shield-check" class="w-5 h-5 text-blue-400 flex-shrink-0"></i>
+        <div class="text-xs text-slate-300">
+          <b>Segurança total:</b> O agente é alimentado exclusivamente com o catálogo, preços e políticas oficiais da sua empresa. Ele nunca inventa descontos nem promessas proibidas.
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 6: CALCULADORA INTERATIVA DE ROI (O CHOQUE DE REALIDADE) -->
+    <section class="slide flex-col justify-center py-4">
+      <div class="mb-6">
+        <span class="text-xs font-bold text-emerald-400 tracking-wider uppercase bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">Simulador Financeiro</span>
+        <h2 class="text-3xl font-extrabold text-white mt-3">Quanto Dinheiro a Sua Empresa Está Deixando na Mesa?</h2>
+        <p class="text-slate-400 text-sm mt-1">Ajuste os valores abaixo para a realidade do seu negócio e veja o impacto:</p>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+        <!-- Controles Interativos -->
+        <div class="lg:col-span-6 space-y-6 bg-slate-900/90 p-6 rounded-2xl border border-slate-800">
+          <!-- Slider Leads -->
+          <div>
+            <div class="flex justify-between text-xs font-semibold mb-2">
+              <span class="text-slate-300">Quantos leads você recebe por mês no WhatsApp?</span>
+              <span class="text-blue-400 font-mono text-sm" id="leadsVal">300 leads</span>
+            </div>
+            <input type="range" min="50" max="1500" step="50" value="300" id="leadsSlider" oninput="calculateROI()" class="w-full accent-blue-500 cursor-pointer">
+          </div>
+
+          <!-- Slider Ticket Médio -->
+          <div>
+            <div class="flex justify-between text-xs font-semibold mb-2">
+              <span class="text-slate-300">Qual é o Ticket Médio da sua venda? (R$)</span>
+              <span class="text-emerald-400 font-mono text-sm" id="ticketVal">R$ 1.800</span>
+            </div>
+            <input type="range" min="200" max="10000" step="100" value="1800" id="ticketSlider" oninput="calculateROI()" class="w-full accent-emerald-500 cursor-pointer">
+          </div>
+
+          <div class="text-[11px] text-slate-500 leading-relaxed border-t border-slate-800 pt-3">
+            *Considerando taxa conservadora de 12% a 15% de leads perdidos por demora no primeiro contato ou fora do horário comercial.
+          </div>
+        </div>
+
+        <!-- Resultados do Cálculo -->
+        <div class="lg:col-span-6 bg-gradient-to-br from-slate-900 via-slate-900 to-blue-950/40 p-6 rounded-2xl border-2 border-slate-800 shadow-xl space-y-4">
+          <div class="border-b border-slate-800 pb-3">
+            <span class="text-xs text-rose-400 font-bold uppercase tracking-wider">Faturamento Perdido Estimado / Mês</span>
+            <div class="text-3xl sm:text-4xl font-extrabold text-rose-400 mt-1 font-mono" id="lostRevenue">R$ 81.000,00</div>
+            <div class="text-[11px] text-slate-400 mt-0.5">Aproximadamente <span id="lostLeadsCount" class="font-bold text-white">45 vendas perdidas</span> todos os meses por falta de atendimento rápido.</div>
+          </div>
+
+          <div class="border-b border-slate-800 pb-3">
+            <span class="text-xs text-emerald-400 font-bold uppercase tracking-wider">Recuperando Apenas 2 Vendas</span>
+            <div class="text-2xl font-bold text-white mt-1 font-mono" id="recoveredRevenue">+ R$ 3.600,00 / mês</div>
+            <div class="text-[11px] text-slate-400 mt-0.5">Dinheiro novo entrando direto no caixa da sua empresa.</div>
+          </div>
+
+          <div class="bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-xl flex items-center justify-between">
+            <span class="text-xs font-bold text-emerald-300">O sistema se paga sozinho com:</span>
+            <span class="text-xs font-mono font-extrabold text-emerald-400 bg-emerald-500/20 px-2 py-1 rounded">1 a 2 vendas/mês</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 7: OS PLANOS DE IMPLEMENTAÇÃO -->
+    <section class="slide flex-col justify-center py-4">
+      <div class="mb-6 text-center">
+        <span class="text-xs font-bold text-blue-400 tracking-wider uppercase bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20">Investimento Transparente</span>
+        <h2 class="text-3xl font-extrabold text-white mt-2">Escolha o Plano Ideal para a Sua Operação</h2>
+        <p class="text-slate-400 text-xs mt-1">Nós cuidamos de 100% da parte técnica. Você só recebe os clientes prontos para comprar.</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto w-full">
+        <!-- Plano Essencial -->
+        <div class="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 flex flex-col justify-between">
+          <div>
+            <h3 class="text-base font-bold text-white">Plano Essencial</h3>
+            <p class="text-xs text-slate-400 mt-1">Para consultórios e pequenas lojas</p>
+            <div class="my-4">
+              <span class="text-2xl font-extrabold text-white">R$ 790</span>
+              <span class="text-xs text-slate-400">/mês</span>
+            </div>
+            <div class="text-xs text-slate-500 pb-3 border-b border-slate-800">Setup: R$ 2.500 (única)</div>
+            <ul class="text-xs text-slate-300 space-y-2 mt-4">
+              <li>✓ 1 número de WhatsApp</li>
+              <li>✓ Até 800 conversas/mês</li>
+              <li>✓ Compreensão de áudios</li>
+              <li>✓ Catálogo de até 15 itens</li>
+              <li>✓ Horário noturno e fins de semana</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Plano Pro Vendas -->
+        <div class="p-6 rounded-2xl bg-gradient-to-b from-blue-950/60 to-slate-900 border-2 border-blue-500 shadow-xl shadow-blue-500/10 flex flex-col justify-between relative">
+          <div class="absolute -top-3 right-4 px-2 py-0.5 rounded-full bg-blue-500 text-slate-950 font-extrabold text-[10px] uppercase">
+            Mais Recomendado
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-white">Plano Pro Vendas</h3>
+            <p class="text-xs text-blue-300 mt-1">Para varejo, clínicas, colchões e piscinas</p>
+            <div class="my-4">
+              <span class="text-3xl font-extrabold text-white">R$ 1.690</span>
+              <span class="text-xs text-slate-400">/mês</span>
+            </div>
+            <div class="text-xs text-slate-400 pb-3 border-b border-slate-800">Setup: R$ 4.500 (única)</div>
+            <ul class="text-xs text-slate-200 space-y-2 mt-4 font-medium">
+              <li>✓ <b>1 a 2 números de WhatsApp</b></li>
+              <li>✓ <b>Até 2.500 conversas/mês</b></li>
+              <li>✓ <b>Compreensão nativa de áudios</b></li>
+              <li>✓ <b>Catálogo completo ilimitado</b></li>
+              <li>✓ <b>Inteligência de frete por bairro</b></li>
+              <li>✓ <b>Régua de follow-up automático</b></li>
+              <li>✓ <b>Relatório executivo semanal</b></li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Plano Escala Enterprise -->
+        <div class="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 flex flex-col justify-between">
+          <div>
+            <h3 class="text-base font-bold text-white">Escala Enterprise</h3>
+            <p class="text-xs text-slate-400 mt-1">Para franquias e redes com filiais</p>
+            <div class="my-4">
+              <span class="text-2xl font-extrabold text-white">R$ 2.990</span>
+              <span class="text-xs text-slate-400">/mês</span>
+            </div>
+            <div class="text-xs text-slate-500 pb-3 border-b border-slate-800">Setup: sob consulta</div>
+            <ul class="text-xs text-slate-300 space-y-2 mt-4">
+              <li>✓ Até 4 números / departamentos</li>
+              <li>✓ Até 6.000 conversas/mês</li>
+              <li>✓ Integração com ERP / Estoque</li>
+              <li>✓ Múltiplas filiais e cidades</li>
+              <li>✓ Suporte VIP e SLA prioritário</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 8: FECHAMENTO & PRÓXIMOS PASSOS -->
+    <section class="slide flex-col items-center text-center justify-center py-6">
+      <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold mb-4">
+        <i data-lucide="check-circle" class="w-3.5 h-3.5"></i>
+        <span>CONDIÇÃO DE PIONEIRISMO EXCLUSIVA</span>
+      </div>
+
+      <h2 class="text-3xl sm:text-5xl font-extrabold text-white tracking-tight mb-4 max-w-2xl">
+        Vamos Ligar o Seu Vendedor 24 Horas Esta Semana?
+      </h2>
+
+      <p class="text-slate-400 text-sm sm:text-base max-w-xl mx-auto mb-8 leading-relaxed">
+        Estamos selecionando apenas <b>3 empresas pioneiras</b> neste segmento para acompanhamento executivo direto da diretoria da LoboAds.
+      </p>
+
+      <div class="p-6 rounded-2xl bg-slate-900 border border-slate-800 max-w-md w-full mb-8 text-left space-y-3">
+        <div class="flex items-center gap-2.5 text-xs text-slate-300">
+          <i data-lucide="award" class="w-4 h-4 text-emerald-400 flex-shrink-0"></i>
+          <span><b>50% de desconto no Setup</b> para fechamento nesta rodada</span>
+        </div>
+        <div class="flex items-center gap-2.5 text-xs text-slate-300">
+          <i data-lucide="clock" class="w-4 h-4 text-blue-400 flex-shrink-0"></i>
+          <span><b>Entrega em 7 dias úteis</b> com acompanhamento diário</span>
+        </div>
+        <div class="flex items-center gap-2.5 text-xs text-slate-300">
+          <i data-lucide="shield" class="w-4 h-4 text-cyan-400 flex-shrink-0"></i>
+          <span><b>Garantia de Adaptação:</b> Treinamos a IA até ficar 100% perfeita</span>
+        </div>
+      </div>
+
+      <a href="https://wa.me/559182054450?text=Ol%C3%A1%20Danyllo,%20quero%20ativar%20o%20Lobo%20Sales%20Agent%20na%20minha%20empresa!" target="_blank" class="px-8 py-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-bold text-base shadow-lg shadow-emerald-500/20 flex items-center gap-2 transition transform hover:-translate-y-0.5">
+        <i data-lucide="message-circle" class="w-5 h-5"></i>
+        <span>Contratar Operação Lobo Sales Agent</span>
+      </a>
+    </section>
+
+  </main>
+
+  <!-- ===================================================================== -->
+  <!-- BARRA DE PROGRESSO & CONTROLES INFERIORES -->
+  <!-- ===================================================================== -->
+  <footer class="w-full px-6 py-4 border-t border-slate-800/80 bg-[#090d16]/90 backdrop-blur flex items-center justify-between">
+    <div class="flex items-center gap-2 text-xs text-slate-400">
+      <span class="hidden sm:inline">Use as setas</span>
+      <kbd class="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 font-mono text-[10px]">←</kbd>
+      <kbd class="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 font-mono text-[10px]">→</kbd>
+      <span class="hidden sm:inline">ou clique ao lado</span>
+    </div>
+
+    <!-- Barra de Progresso Visual -->
+    <div class="flex-1 max-w-xs mx-4 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+      <div id="progressBar" class="h-full bg-gradient-to-r from-blue-500 to-cyan-400 transition-all duration-300 w-[12.5%]"></div>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <button onclick="prevSlide()" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition" title="Slide Anterior (Seta Esquerda)">
+        <i data-lucide="chevron-left" class="w-5 h-5"></i>
+      </button>
+      <button onclick="nextSlide()" class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition flex items-center gap-1.5" title="Próximo Slide (Seta Direita / Barra de Espaço)">
+        <span>Próximo</span>
+        <i data-lucide="chevron-right" class="w-4 h-4"></i>
+      </button>
+    </div>
+  </footer>
+
+  <!-- ===================================================================== -->
+  <!-- MODAL: ROTEIRO DO APRESENTADOR (PITCH SCRIPT) -->
+  <!-- ===================================================================== -->
+  <div id="notesModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl max-h-[85vh] flex flex-col">
+      <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+        <div class="flex items-center gap-2">
+          <i data-lucide="book-open" class="w-5 h-5 text-blue-400"></i>
+          <h3 class="font-bold text-white text-base">Roteiro do Apresentador (O que Falar no Slide Atual)</h3>
+        </div>
+        <button onclick="toggleNotesModal()" class="text-slate-400 hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto py-4 text-sm text-slate-300 space-y-4" id="notesContent">
+        <!-- O conteúdo será injetado dinamicamente pelo JS -->
+      </div>
+
+      <div class="pt-4 border-t border-slate-800 flex justify-end">
+        <button onclick="toggleNotesModal()" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white">Fechar (Esc)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- SCRIPT DE NAVEGAÇÃO E LÓGICA -->
+  <!-- ===================================================================== -->
+  <script>
+    const slides = document.querySelectorAll('.slide');
+    const totalSlides = slides.length;
+    let currentSlide = 0;
+
+    // Roteiro comercial passo a passo para cada slide
+    const presenterNotes = [
+      // Slide 1
+      `<b>SLIDE 1 — CAPA & POSICIONAMENTO:</b><br/>
+      • <i>O que falar:</i> "Fulano, obrigado pelo tempo. Hoje eu não vim te mostrar um aplicativo ou um software para você ter trabalho de gerenciar. Eu vim te apresentar a nossa nova operação de vendas 24 horas por dia no WhatsApp."<br/>
+      • <i>Frase de impacto:</i> "Você já gasta dinheiro trazendo clientes interessados para o seu WhatsApp. O que a gente fez foi criar uma inteligência que garante que NENHUM desses clientes vá embora sem comprar por falta de atendimento rápido."`,
+
+      // Slide 2
+      `<b>SLIDE 2 — A FERIDA REAL (ONDE ELE PERDE DINHEIRO):</b><br/>
+      • <i>O que falar:</i> "Deixa eu te fazer uma pergunta sincera: quando alguém manda mensagem no seu WhatsApp às 21h de uma quarta-feira ou no domingo à tarde, quem responde?"<br/>
+      • <i>Tocar na dor:</i> "Geralmente ninguém. E na segunda de manhã, seu atendente já chega com 30 mensagens acumuladas, responde correndo 'temos sim' e o cliente já comprou do concorrente."<br/>
+      • <i>Dado estatístico:</i> "Após 5 minutos sem resposta, 80% das chances de venda são perdidas. É literalmente dinheiro de anúncios jogado no lixo."`,
+
+      // Slide 3
+      `<b>SLIDE 3 — COMPARATIVO:</b><br/>
+      • <i>O que falar:</i> "A maioria das empresas tenta resolver isso de duas formas que não funcionam: ou contratam aqueles robôs chatos de 'digite 1 para falar com financeiro' que todo mundo odeia e ninguém lê, ou tentam contratar mais funcionários CLT, o que custa caro e não resolve a noite nem o fim de semana."<br/>
+      • <i>Apresentar a LoboAds:</i> "O Lobo Sales Agent une o melhor dos dois mundos: tem o cérebro e a educação do seu melhor vendedor, responde em 4 segundos e trabalha 24 horas por dia."`,
+
+      // Slide 4
+      `<b>SLIDE 4 — DEMO AO VIVO DO WHATSAPP:</b><br/>
+      • <i>O que falar:</i> "Olha aqui na tela como é a conversa real. Repare nesses três detalhes que ninguém no mercado tem:"<br/>
+      1. O cliente manda áudio com sotaque, barulho de rua, e ele entende 100% da pergunta.<br/>
+      2. Ele não manda um textão gigante que dá preguiça de ler. Ele quebra em mensagens curtas, igual uma pessoa digitando.<br/>
+      3. Ele conhece a sua loja física, sabe os bairros da cidade (Tapanã, Marambaia, etc.) e dá frete grátis conforme a regra da sua empresa.<br/>
+      • <i>Se o cliente duvidar:</i> Faça o teste ao vivo no celular dele agora mesmo!`,
+
+      // Slide 5
+      `<b>SLIDE 5 — METODOLOGIA SDR & CLOSER:</b><br/>
+      • <i>O que falar:</i> "Ele não é um robô passivo de FAQ. Ele foi treinado com o método comercial de vendas consultivas:"<br/>
+      • Acolhe com carinho -> Pergunta o que a pessoa precisa -> Apresenta o modelo certo -> Dá as condições no Pix à vista ou em até 10x sem juros -> E convida para fechar ou vir na loja tomar um café."`,
+
+      // Slide 6
+      `<b>SLIDE 6 — CALCULADORA INTERATIVA DE ROI:</b><br/>
+      • <i>O que falar:</i> "Fulano, vamos fazer uma conta rápida aqui na tela com os números da sua loja:"<br/>
+      • (Arraste os sliders com o cliente olhando).<br/>
+      • "Se você recebe 300 pessoas por mês e seu produto custa R$ 1.800, você está perdendo cerca de R$ 81.000,00 por mês em vendas que escapam pelo WhatsApp."<br/>
+      • <i>O Fechamento da Lógica:</i> "Se o nosso sistema recuperar APENAS 2 vendas dessas 45 que você já está perdendo todo mês... ele já botou R$ 3.600 de lucro no seu bolso e se pagou sozinho!"`,
+
+      // Slide 7
+      `<b>SLIDE 7 — OS PLANOS & PACOTES:</b><br/>
+      • <i>O que falar:</i> "Para a sua operação hoje, o plano mais indicado é o <b>Plano Pro Vendas</b>."<br/>
+      • "Você não precisa se preocupar com servidor, inteligência, nada. Nós fazemos o levantamento do seu catálogo, cadastramos as regras de desconto, treinamos o agente com a sua voz e entregamos 100% pronto em 7 dias."`,
+
+      // Slide 8
+      `<b>SLIDE 8 — O FECHAMENTO IMEDIATO:</b><br/>
+      • <i>O que falar:</i> "Como estamos abrindo as primeiras vagas para este segmento específico na cidade, eu quero te fazer uma proposta de pioneirismo:"<br/>
+      • "Eu tiro 50% da taxa de implantação para a gente fechar agora, e minha equipe técnica vai acompanhar o seu WhatsApp todos os dias nas próximas duas semanas até você ver as primeiras vendas acontecendo."<br/>
+      • <i>Pergunta de Fechamento:</i> "Vamos assinar a ordem de início para ligar o seu vendedor 24h já nesta semana?"`
+    ];
+
+    function updateSlide() {
+      slides.forEach((s, idx) => {
+        s.classList.toggle('active', idx === currentSlide);
+      });
+      document.getElementById('currentSlideNum').innerText = currentSlide + 1;
+      document.getElementById('totalSlidesNum').innerText = totalSlides;
+      
+      const progressPercent = ((currentSlide + 1) / totalSlides) * 100;
+      document.getElementById('progressBar').style.width = progressPercent + '%';
+
+      // Atualiza o conteúdo do modal de notas
+      document.getElementById('notesContent').innerHTML = presenterNotes[currentSlide] || "Sem anotações específicas para este slide.";
+    }
+
+    function nextSlide() {
+      if (currentSlide < totalSlides - 1) {
+        currentSlide++;
+        updateSlide();
+      }
+    }
+
+    function prevSlide() {
+      if (currentSlide > 0) {
+        currentSlide--;
+        updateSlide();
+      }
+    }
+
+    // Teclas de atalho
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
+        nextSlide();
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        prevSlide();
+      } else if (e.key.toLowerCase() === 'f') {
+        toggleFullscreen();
+      } else if (e.key.toLowerCase() === 'n') {
+        toggleNotesModal();
+      } else if (e.key === 'Escape') {
+        document.getElementById('notesModal').classList.add('hidden');
+      }
+    });
+
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    }
+
+    function toggleNotesModal() {
+      const modal = document.getElementById('notesModal');
+      modal.classList.toggle('hidden');
+    }
+
+    // Calculadora Interativa de ROI
+    function calculateROI() {
+      const leads = parseInt(document.getElementById('leadsSlider').value);
+      const ticket = parseInt(document.getElementById('ticketSlider').value);
+
+      document.getElementById('leadsVal').innerText = `${leads} leads`;
+      document.getElementById('ticketVal').innerText = `R$ ${ticket.toLocaleString('pt-BR')}`;
+
+      // Taxa estimada de leads perdidos: 15%
+      const lostLeads = Math.round(leads * 0.15);
+      const lostRev = lostLeads * ticket;
+      const recoveredRev = 2 * ticket;
+
+      document.getElementById('lostLeadsCount').innerText = `${lostLeads} vendas perdidas`;
+      document.getElementById('lostRevenue').innerText = `R$ ${lostRev.toLocaleString('pt-BR')},00`;
+      document.getElementById('recoveredRevenue').innerText = `+ R$ ${recoveredRev.toLocaleString('pt-BR')},00 / mês`;
+    }
+
+    // Inicialização
+    document.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      updateSlide();
+      calculateROI();
+    });
+  </script>
+</body>
+</html>
