@@ -42,15 +42,35 @@ def _decode_base64_media(raw: str) -> bytes:
         raise TranscriptionError("base64 de áudio inválido") from exc
 
 
+def normalize_audio_mimetype(mimetype: str | None) -> str:
+    """Normaliza mimetypes de voz do WhatsApp (ex.: `audio/ogg; codecs=opus` -> `audio/ogg`)."""
+    raw = (mimetype or "audio/ogg").lower().split(";")[0].strip()
+    mapping = {
+        "audio/ogg": "audio/ogg",
+        "audio/opus": "audio/ogg",
+        "audio/oga": "audio/ogg",
+        "application/ogg": "audio/ogg",
+        "audio/mpeg": "audio/mpeg",
+        "audio/mp3": "audio/mpeg",
+        "audio/x-mp3": "audio/mpeg",
+        "audio/mp4": "audio/mp4",
+        "audio/m4a": "audio/mp4",
+        "audio/x-m4a": "audio/mp4",
+        "audio/aac": "audio/mp4",
+        "audio/wav": "audio/wav",
+        "audio/x-wav": "audio/wav",
+        "audio/wave": "audio/wav",
+        "audio/webm": "audio/webm",
+    }
+    return mapping.get(raw, "audio/ogg")
+
+
 def _extension_for_mime(mimetype: str) -> str:
-    mime = mimetype.lower().split(";")[0].strip()
+    mime = normalize_audio_mimetype(mimetype)
     mapping = {
         "audio/ogg": "ogg",
-        "audio/opus": "ogg",
         "audio/mpeg": "mp3",
-        "audio/mp3": "mp3",
         "audio/mp4": "m4a",
-        "audio/x-m4a": "m4a",
         "audio/wav": "wav",
         "audio/webm": "webm",
     }
@@ -84,6 +104,12 @@ class AudioTranscriber:
             text = (await self._custom_fn(audio_bytes, mimetype)).strip()
             if not text:
                 raise TranscriptionError("transcrição retornou vazia", tenant_id=message.tenant_id)
+            logger.info(
+                "Áudio transcrito (%d bytes) texto=%r %s",
+                len(audio_bytes),
+                text[:120],
+                message.log_context(),
+            )
             return message.with_transcription(text)
 
         errors: list[str] = []
@@ -91,7 +117,12 @@ class AudioTranscriber:
             try:
                 text = await self._transcribe_with_gemini(audio_bytes, mimetype)
                 if text:
-                    logger.info("Áudio transcrito via Gemini %s", message.log_context())
+                    logger.info(
+                        "Áudio transcrito via Gemini (%d bytes) texto=%r %s",
+                        len(audio_bytes),
+                        text[:120],
+                        message.log_context(),
+                    )
                     return message.with_transcription(text)
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"gemini:{type(exc).__name__}")
@@ -101,7 +132,12 @@ class AudioTranscriber:
             try:
                 text = await self._transcribe_with_whisper(audio_bytes, mimetype)
                 if text:
-                    logger.info("Áudio transcrito via Whisper %s", message.log_context())
+                    logger.info(
+                        "Áudio transcrito via Whisper (%d bytes) texto=%r %s",
+                        len(audio_bytes),
+                        text[:120],
+                        message.log_context(),
+                    )
                     return message.with_transcription(text)
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"whisper:{type(exc).__name__}")
@@ -144,14 +180,19 @@ class AudioTranscriber:
         media = message.media
         if media is None:
             raise TranscriptionError("mensagem de áudio sem objeto media", tenant_id=message.tenant_id)
-        mimetype = (media.mimetype or "audio/ogg").split(";")[0].strip()
+        mimetype = normalize_audio_mimetype(media.mimetype)
 
         if media.data_base64:
-            return _decode_base64_media(media.data_base64), mimetype
+            audio_bytes = _decode_base64_media(media.data_base64)
+            logger.info("Áudio decodificado (%d bytes, mime=%s) %s", len(audio_bytes), mimetype, message.log_context())
+            return audio_bytes, mimetype
 
         if gateway is not None:
             try:
                 audio_bytes = await gateway.download_media(message)
+                if not audio_bytes:
+                    raise TranscriptionError("áudio baixado está vazio (0 bytes)", tenant_id=message.tenant_id)
+                logger.info("Áudio baixado (%d bytes, mime=%s) %s", len(audio_bytes), mimetype, message.log_context())
                 return audio_bytes, mimetype
             except GatewayError as exc:
                 raise TranscriptionError(
@@ -170,6 +211,7 @@ class AudioTranscriber:
         from langchain_google_genai import ChatGoogleGenerativeAI
 
         assert self._settings.google_api_key is not None
+        clean_mime = normalize_audio_mimetype(mimetype)
         llm = ChatGoogleGenerativeAI(
             model=self._settings.gemini_transcribe_model,
             google_api_key=self._settings.google_api_key.get_secret_value(),
@@ -180,7 +222,7 @@ class AudioTranscriber:
         msg = HumanMessage(
             content=[
                 {"type": "text", "text": _TRANSCRIPTION_PROMPT},
-                {"type": "media", "mime_type": mimetype, "data": b64},
+                {"type": "media", "mime_type": clean_mime, "data": b64},
             ]
         )
         resp = await llm.ainvoke([msg])
@@ -203,5 +245,5 @@ class AudioTranscriber:
         return (transcript.text or "").strip()
 
 
-__all__ = ["AudioTranscriber", "TranscribeFn"]
+__all__ = ["AudioTranscriber", "TranscribeFn", "normalize_audio_mimetype"]
 

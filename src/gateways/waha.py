@@ -12,10 +12,11 @@ Referência: https://waha.devlike.pro
 from __future__ import annotations
 
 import base64
+import json
 import logging
 from collections.abc import Mapping
 from typing import Any, ClassVar
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from pydantic import ValidationError
 
@@ -107,7 +108,7 @@ class WahaGateway(WhatsAppGateway):
             return result.ignore("unsupported_message", event, msg_id)
 
         body = (p.get("body") or "").strip() or None
-        reply_to = p.get("replyTo")
+        quoted_id, quoted_text = self._extract_quoted(p, data)
         try:
             message = IncomingMessage(
                 message_id=msg_id,
@@ -121,7 +122,8 @@ class WahaGateway(WhatsAppGateway):
                 text=body if msg_type is MessageType.TEXT else None,
                 media=media,
                 location=location,
-                quoted_message_id=dig(reply_to, "id") if isinstance(reply_to, Mapping) else None,
+                quoted_message_id=quoted_id,
+                quoted_text=quoted_text,
                 from_me=from_me,
                 timestamp=epoch_to_datetime(p.get("timestamp")) or utcnow(),
                 raw_payload=dict(payload),
@@ -131,6 +133,48 @@ class WahaGateway(WhatsAppGateway):
 
         result.messages.append(message)
         return result
+
+    @staticmethod
+    def _extract_quoted(p: Mapping[str, Any], data: Mapping[str, Any]) -> tuple[str | None, str | None]:
+        """Extrai o ID e o texto da mensagem citada (replyTo / _data.quotedMsg / contextInfo)."""
+        reply_to = p.get("replyTo") if isinstance(p.get("replyTo"), Mapping) else {}
+        quoted_msg = data.get("quotedMsg") if isinstance(data.get("quotedMsg"), Mapping) else {}
+        ctx = (
+            dig(data, "message", "extendedTextMessage", "contextInfo")
+            or dig(data, "contextInfo")
+            or {}
+        )
+        ctx = ctx if isinstance(ctx, Mapping) else {}
+        proto_quoted = ctx.get("quotedMessage") if isinstance(ctx.get("quotedMessage"), Mapping) else {}
+
+        quoted_id_raw = (
+            reply_to.get("id")
+            or quoted_msg.get("id")
+            or data.get("quotedStanzaID")
+            or ctx.get("stanzaId")
+        )
+        if isinstance(quoted_id_raw, Mapping):
+            quoted_id_raw = quoted_id_raw.get("_serialized") or quoted_id_raw.get("id")
+        quoted_id = str(quoted_id_raw).strip() if quoted_id_raw else None
+
+        candidates = (
+            reply_to.get("body"),
+            reply_to.get("text"),
+            reply_to.get("caption"),
+            quoted_msg.get("body"),
+            quoted_msg.get("caption"),
+            quoted_msg.get("text"),
+            quoted_msg.get("conversation"),
+            proto_quoted.get("conversation"),
+            dig(proto_quoted, "extendedTextMessage", "text"),
+            dig(proto_quoted, "imageMessage", "caption"),
+            dig(proto_quoted, "videoMessage", "caption"),
+        )
+        quoted_text = next(
+            (str(c).strip() for c in candidates if isinstance(c, str) and c.strip()),
+            None,
+        )
+        return quoted_id, quoted_text
 
     @staticmethod
     def _resolve_lid(data: Mapping[str, Any], from_me: bool) -> str | None:
@@ -188,8 +232,11 @@ class WahaGateway(WhatsAppGateway):
                 else:
                     data_type = MessageType.DOCUMENT
             caption = (p.get("body") or "").strip() or None
+            raw_b64 = info.get("data_base64") or info.get("data")
+            data_b64 = str(raw_b64).strip() if isinstance(raw_b64, str) and str(raw_b64).strip() else None
             media = MediaAttachment(
                 url=info.get("url") or None,
+                data_base64=data_b64,
                 provider_media_id=msg_id,
                 mimetype=mimetype,
                 filename=info.get("filename") or data.get("filename"),
@@ -276,23 +323,103 @@ class WahaGateway(WhatsAppGateway):
     async def download_media(self, message: IncomingMessage) -> bytes:
         media = message.media
         if media is None:
-            raise GatewayError("WAHA: mensagem sem mídia")
+            raise GatewayError("WAHA: mensagem sem mídia", tenant_id=message.tenant_id)
         if media.data_base64:
             return base64.b64decode(media.data_base64.split(",", 1)[-1])
-        if not media.url:
+
+        raw_b64 = dig(message.raw_payload, "payload", "media", "data_base64") or dig(
+            message.raw_payload, "payload", "media", "data"
+        )
+        if isinstance(raw_b64, str) and raw_b64.strip():
+            return base64.b64decode(raw_b64.strip().split(",", 1)[-1])
+
+        # Candidatos de download:
+        # 1) media.url reescrita para self.base_url (reescreve localhost / IP interno da VPS)
+        # 2) /api/files/{filename} (se filename estiver presente)
+        # 3) /api/{session}/chats/{chatId}/messages/{messageId}/media
+        # 4) /api/{session}/chats/{chatId}/messages/{messageId}?downloadMedia=true
+        candidates: list[tuple[str, str]] = []
+        seen_urls: set[str] = set()
+
+        def _add(path_label: str, full_url: str) -> None:
+            if full_url not in seen_urls:
+                seen_urls.add(full_url)
+                candidates.append((path_label, full_url))
+
+        if media.url:
+            parts = urlsplit(media.url)
+            path_q = parts.path + (f"?{parts.query}" if parts.query else "")
+            _add(parts.path, f"{self.base_url}{path_q}")
+
+        if media.filename:
+            clean_fn = media.filename.lstrip("/")
+            fn_path = f"/api/files/{quote(clean_fn, safe='/')}"
+            _add(fn_path, f"{self.base_url}{fn_path}")
+
+        session = quote(message.session_id or self.default_session, safe="")
+        chat_id = quote(self.chat_id_for(message.chat_id or message.contact_phone), safe="@.")
+        msg_id = quote(media.provider_media_id or message.message_id, safe="@._-")
+        if msg_id:
+            msg_media_path = f"/api/{session}/chats/{chat_id}/messages/{msg_id}/media"
+            _add(msg_media_path, f"{self.base_url}{msg_media_path}")
+            msg_dl_path = f"/api/{session}/chats/{chat_id}/messages/{msg_id}"
+            _add(msg_dl_path, f"{self.base_url}{msg_dl_path}?downloadMedia=true")
+
+        if not candidates:
             raise GatewayError(
-                "WAHA: mídia sem URL (verifique o download automático de mídias no WAHA)",
+                "WAHA: mídia sem URL ou message_id para download",
                 tenant_id=message.tenant_id,
             )
-        # A URL vem com o host configurado DENTRO do WAHA (às vezes interno, ex. localhost:3000).
-        # Reescrevemos para o nosso WAHA_BASE_URL — e garantimos que a API key nunca vá
-        # para um host de terceiros.
-        parts = urlsplit(media.url)
-        path = parts.path + (f"?{parts.query}" if parts.query else "")
-        return await self._request(
-            "GET",
-            parts.path,
-            absolute_url=f"{self.base_url}{path}",
-            expect_json=False,
-            log_contact=message.contact_phone,
-        )
+
+        last_err: GatewayError | None = None
+        for path_label, full_url in candidates:
+            try:
+                raw_bytes: bytes = await self._request(
+                    "GET",
+                    path_label,
+                    absolute_url=full_url,
+                    headers={"Accept": "*/*"},
+                    expect_json=False,
+                    log_contact=message.contact_phone,
+                )
+                resolved = await self._unwrap_media_response(raw_bytes, log_contact=message.contact_phone)
+                if resolved:
+                    return resolved
+            except GatewayError as exc:
+                last_err = exc
+                logger.warning("WAHA: falha ao baixar mídia em %s (%s), tentando fallback", path_label, exc.message)
+
+        if last_err is not None:
+            raise last_err
+        raise GatewayError("WAHA: não foi possível baixar a mídia", tenant_id=message.tenant_id)
+
+    async def _unwrap_media_response(self, raw_bytes: bytes, *, log_contact: str | None) -> bytes:
+        """Se o endpoint retornar JSON com `media.data`/`media.url` em vez de binário puro, extrai os bytes."""
+        stripped = raw_bytes.lstrip()
+        if stripped.startswith(b"{"):
+            try:
+                obj = json.loads(stripped.decode("utf-8"))
+            except (UnicodeDecodeError, ValueError):
+                return raw_bytes
+            if isinstance(obj, Mapping):
+                b64 = (
+                    obj.get("data_base64")
+                    or obj.get("data")
+                    or dig(obj, "media", "data_base64")
+                    or dig(obj, "media", "data")
+                )
+                if isinstance(b64, str) and b64.strip():
+                    return base64.b64decode(b64.strip().split(",", 1)[-1])
+                nested_url = obj.get("url") or dig(obj, "media", "url")
+                if isinstance(nested_url, str) and nested_url.strip():
+                    parts = urlsplit(nested_url.strip())
+                    path_q = parts.path + (f"?{parts.query}" if parts.query else "")
+                    return await self._request(
+                        "GET",
+                        parts.path,
+                        absolute_url=f"{self.base_url}{path_q}",
+                        headers={"Accept": "*/*"},
+                        expect_json=False,
+                        log_contact=log_contact,
+                    )
+        return raw_bytes

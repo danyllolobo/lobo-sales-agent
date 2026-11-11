@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any
 
 import redis.asyncio as aioredis
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from redis.exceptions import RedisError
 
 from src.core.schemas import IncomingMessage, mask_phone, normalize_phone, utcnow
@@ -72,6 +72,9 @@ class SandboxConfig(BaseModel):
     trigger_keywords: list[str] = Field(default_factory=lambda: list(DEFAULT_TRIGGER_KEYWORDS))
     session_ttl_minutes: int = Field(default=30, ge=1, le=24 * 60)
     stop_keywords: list[str] = Field(default_factory=lambda: list(DEFAULT_STOP_KEYWORDS))
+    debounce_silence_seconds: float | None = Field(default=None, ge=1.0, le=30.0)
+    debounce_max_window_seconds: float | None = Field(default=None, ge=2.0, le=60.0)
+    split_messages: bool = True
     updated_at: datetime | None = None
 
     @field_validator("allowed_phones", mode="before")
@@ -99,6 +102,13 @@ class SandboxConfig(BaseModel):
         if not cleaned:
             raise ValueError("informe ao menos um comando de parada")
         return cleaned
+
+    @model_validator(mode="after")
+    def _validate_debounce(self) -> SandboxConfig:
+        s, m = self.debounce_silence_seconds, self.debounce_max_window_seconds
+        if s is not None and m is not None and s >= m:
+            raise ValueError("debounce_silence_seconds deve ser menor que debounce_max_window_seconds")
+        return self
 
 
 class SandboxAction(StrEnum):

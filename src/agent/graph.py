@@ -20,6 +20,7 @@ Fluxo completo do grafo (`ARCHITECTURE.md` §1 e §4):
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -50,10 +51,12 @@ from src.config import Settings, get_settings
 from src.core.schemas import (
     LeadProfile,
     MessageBatch,
+    MessageType,
     OutgoingMessage,
     Provider,
     mask_phone,
     normalize_phone,
+    split_human_chunks,
     utcnow,
 )
 from src.crm.base import CRMConnector
@@ -357,13 +360,14 @@ class SalesAgentRunner:
         gateway = self._safe_resolve_gateway(batch.provider)
 
         try:
-            # Se o contato ainda não estiver pausado, envia "digitando..." e transcreve áudios
+            # Se o contato ainda não estiver pausado, confirma leitura (blue ticks),
+            # aguarda breve pausa de leitura humana (500ms-1000ms), envia "digitando..." e transcreve áudios
             is_paused = lead.ai_paused or (
                 self._pause is not None and await self._pause.is_paused(batch.tenant_id, batch.contact_phone)
             )
             if not is_paused:
                 if gateway is not None:
-                    await self._safe_set_typing(gateway, batch)
+                    await self._safe_mark_seen_and_typing(gateway, batch)
                 if batch.needs_transcription:
                     batch = await self._transcriber.transcribe_batch(batch, gateway=gateway)
 
@@ -460,12 +464,44 @@ class SalesAgentRunner:
             logger.debug("Gateway %s indisponível para despacho direto: %s", provider.value, type(exc).__name__)
             return None
 
+    @staticmethod
+    def _reading_delay_seconds(batch: MessageBatch) -> float:
+        """Delay de leitura humana proporcional ao tamanho das mensagens (500ms a 1000ms)."""
+        chars = len(batch.combined_text or "")
+        return round(min(max(0.5 + chars * 0.003, 0.5), 1.0), 3)
+
+    async def _safe_mark_seen(self, gateway: WhatsAppGateway, batch: MessageBatch) -> None:
+        try:
+            target = batch.last_message.chat_id or batch.contact_phone
+            await gateway.mark_seen(batch.session_id, target, batch.message_ids)
+        except Exception:  # noqa: BLE001
+            logger.debug("Falha não-crítica ao enviar mark_seen para %s", mask_phone(batch.contact_phone))
+
     async def _safe_set_typing(self, gateway: WhatsAppGateway, batch: MessageBatch) -> None:
         try:
             target = batch.last_message.chat_id or batch.contact_phone
             await gateway.set_typing(batch.session_id, target, True)
         except Exception:  # noqa: BLE001
             logger.debug("Falha não-crítica ao enviar status composing para %s", mask_phone(batch.contact_phone))
+
+    async def _safe_mark_seen_and_typing(self, gateway: WhatsAppGateway, batch: MessageBatch) -> None:
+        """Fluxo humanizado pré-turno: 1) Blue ticks (mark_seen) -> 2) Pausa 500-1000ms -> 3) Digitando..."""
+        await self._safe_mark_seen(gateway, batch)
+        delay = self._reading_delay_seconds(batch)
+        if delay > 0:
+            await asyncio.sleep(delay)
+        await self._safe_set_typing(gateway, batch)
+
+    def _should_split_messages(self, tenant_id: str) -> bool:
+        try:
+            return bool(self._store.get(tenant_id).tenant.split_messages)
+        except Exception:  # noqa: BLE001
+            return bool(self._settings.split_messages)
+
+    @staticmethod
+    def _chunk_typing_seconds(chunk_text: str) -> float:
+        """Duração de digitação proporcional entre partes (1.5s a 2.5s)."""
+        return round(min(max(len(chunk_text) * 0.012, 1.5), 2.5), 2)
 
     async def _dispatch_outgoing(
         self,
@@ -478,22 +514,75 @@ class SalesAgentRunner:
                 outgoing.contact_phone,
                 text=outgoing.text,
             )
-        if gateway is None:
-            return
-        try:
-            send_res = await gateway.deliver(outgoing)
-            if self._pause is not None and send_res.message_id:
+
+        if outgoing.type is MessageType.TEXT and outgoing.text and self._should_split_messages(outgoing.tenant_id):
+            chunks = split_human_chunks(outgoing.text)
+        else:
+            chunks = [outgoing.text] if outgoing.text else []
+
+        if self._pause is not None and len(chunks) > 1:
+            for chunk_text in chunks:
                 await self._pause.register_bot_outbound(
                     outgoing.tenant_id,
                     outgoing.contact_phone,
-                    message_id=send_res.message_id,
+                    text=chunk_text,
                 )
-        except Exception as exc:  # noqa: BLE001
-            logger.error(
-                "Falha ao enviar OutgoingMessage no gateway (%s) %s",
-                type(exc).__name__,
-                outgoing.log_context(),
+
+        if gateway is None:
+            return
+
+        if len(chunks) <= 1:
+            try:
+                send_res = await gateway.deliver(outgoing)
+                if self._pause is not None and send_res.message_id:
+                    await self._pause.register_bot_outbound(
+                        outgoing.tenant_id,
+                        outgoing.contact_phone,
+                        message_id=send_res.message_id,
+                    )
+            except Exception as exc:  # noqa: BLE001
+                logger.error(
+                    "Falha ao enviar OutgoingMessage no gateway (%s) %s",
+                    type(exc).__name__,
+                    outgoing.log_context(),
+                )
+            return
+
+        for idx, chunk_text in enumerate(chunks):
+            typing_secs: float | None
+            if not outgoing.simulate_typing:
+                typing_secs = 0.0
+            elif outgoing.typing_seconds is not None:
+                typing_secs = outgoing.typing_seconds
+            elif idx == 0:
+                typing_secs = min(outgoing.effective_typing_seconds, 1.5)
+            else:
+                typing_secs = self._chunk_typing_seconds(chunk_text)
+
+            part_msg = outgoing.model_copy(
+                update={
+                    "text": chunk_text,
+                    "reply_to_message_id": outgoing.reply_to_message_id if idx == 0 else None,
+                    "typing_seconds": typing_secs,
+                }
             )
+            try:
+                send_res = await gateway.deliver(part_msg)
+                if self._pause is not None and send_res.message_id:
+                    await self._pause.register_bot_outbound(
+                        outgoing.tenant_id,
+                        outgoing.contact_phone,
+                        message_id=send_res.message_id,
+                    )
+            except Exception as exc:  # noqa: BLE001
+                logger.error(
+                    "Falha ao enviar parte %d/%d de OutgoingMessage no gateway (%s) %s",
+                    idx + 1,
+                    len(chunks),
+                    type(exc).__name__,
+                    part_msg.log_context(),
+                )
+                break
 
 
 __all__ = [
@@ -502,4 +591,5 @@ __all__ = [
     "build_sales_graph",
     "route_after_commercial",
     "route_after_triage",
+    "split_human_chunks",
 ]

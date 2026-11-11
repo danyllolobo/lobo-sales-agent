@@ -209,10 +209,12 @@ class WhatsAppGateway(ABC):
         path: str,
         *,
         json: dict[str, Any] | None = None,
+        headers: Mapping[str, str] | None = None,
         expect_json: bool = True,
         absolute_url: str | None = None,
         log_contact: str | None = None,
     ) -> Any:
+        merged_headers = {**self._auth_headers(), **(dict(headers) if headers else {})}
         return await request_json(
             self._client,
             method,
@@ -220,7 +222,7 @@ class WhatsAppGateway(ABC):
             error_cls=GatewayError,
             service=self.provider.value,
             path=path,
-            headers=self._auth_headers(),
+            headers=merged_headers,
             json=json,
             expect_json=expect_json,
             log_contact=log_contact,

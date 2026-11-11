@@ -151,10 +151,17 @@ def create_app(
             await app.state.agent.handle_batch(batch)
 
         flush_handler = on_flush or default_agent_flush
+        sb_cfg = await sandbox.get_config()
+        effective_silence = sb_cfg.debounce_silence_seconds or settings.debounce_silence_seconds
+        effective_max_window = sb_cfg.debounce_max_window_seconds or max(
+            settings.debounce_max_window_seconds, effective_silence + 5.0
+        )
+        if sb_cfg.split_messages is not None:
+            settings.split_messages = sb_cfg.split_messages
         buffer = MessageBuffer(
             redis,
-            silence_seconds=settings.debounce_silence_seconds,
-            max_window_seconds=settings.debounce_max_window_seconds,
+            silence_seconds=effective_silence,
+            max_window_seconds=effective_max_window,
             on_flush=flush_handler,
         )
         app.state.buffer = buffer

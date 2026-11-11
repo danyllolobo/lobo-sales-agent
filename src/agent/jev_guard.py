@@ -218,9 +218,21 @@ class JEVDecision(BaseModel):
     extracted_attributes: dict[str, str] = Field(default_factory=dict)
 
 
+def _strip_quoted_header(text: str) -> str:
+    """Remove o cabeçalho `[Lead respondeu citando...]` para priorizar o texto do próprio lead."""
+    lines = [
+        ln
+        for ln in text.splitlines()
+        if not ln.strip().startswith("[Lead respondeu citando")
+    ]
+    cleaned = "\n".join(lines).strip()
+    return cleaned or text
+
+
 def extract_lead_attributes(text: str, segment: Segment = Segment.GENERIC) -> dict[str, str]:
     """Extrai atributos comerciais estruturados do texto do lead (determinístico)."""
-    norm = f" {normalize_text(text)} "
+    unquoted = _strip_quoted_header(text)
+    norm = f" {normalize_text(unquoted)} "
     attrs: dict[str, str] = {}
 
     # Cidades

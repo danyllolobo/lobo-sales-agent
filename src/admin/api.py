@@ -52,6 +52,9 @@ class SandboxUpdate(BaseModel):
     trigger_keywords: list[str] | None = None
     stop_keywords: list[str] | None = None
     session_ttl_minutes: int | None = None
+    debounce_silence_seconds: float | None = None
+    debounce_max_window_seconds: float | None = None
+    split_messages: bool | None = None
 
 
 class SimulateIn(BaseModel):
@@ -132,6 +135,7 @@ def _tenant_summary(t: TenantData) -> dict[str, Any]:
         "timezone": t.tenant.timezone,
         "debounce_silence_seconds": t.tenant.debounce_silence_seconds,
         "debounce_max_window_seconds": t.tenant.debounce_max_window_seconds,
+        "split_messages": t.tenant.split_messages,
         "items": len(t.catalog.items),
         "delivery_zones": len(t.delivery.zones),
         "services": len(t.calendar.services) if t.calendar else 0,
@@ -161,7 +165,11 @@ async def overview(request: Request) -> dict[str, Any]:
         "environment": settings.environment,
         "gemini_model": settings.gemini_model,
         "redis_backend": settings.redis_backend,
-        "debounce": settings.safe_summary()["debounce"],
+        "debounce": {
+            "silence_seconds": st.buffer.silence_seconds,
+            "max_window_seconds": st.buffer.max_window_seconds,
+            "split_messages": settings.split_messages,
+        },
         "auth_required": settings.admin_auth_required,
         "sandbox_active": sandbox["active"],
         "sandbox_forced": sandbox["forced_by_environment"],
@@ -201,14 +209,27 @@ async def sandbox_get(request: Request) -> dict[str, Any]:
 
 @router.put("/sandbox")
 async def sandbox_put(request: Request, body: SandboxUpdate) -> Any:
-    sandbox = _state(request).sandbox
+    st = _state(request)
+    sandbox = st.sandbox
     current = await sandbox.get_config()
     updates = body.model_dump(exclude_none=True)
+    merged = {**current.model_dump(), **updates}
+    if merged.get("debounce_silence_seconds") is not None and merged.get("debounce_max_window_seconds") is None:
+        merged["debounce_max_window_seconds"] = max(
+            st.buffer.max_window_seconds, float(merged["debounce_silence_seconds"]) + 5.0
+        )
     try:
-        new_config = SandboxConfig.model_validate({**current.model_dump(), **updates})
+        new_config = SandboxConfig.model_validate(merged)
     except ValidationError as exc:
         return _validation_response(exc)
     await sandbox.save_config(new_config)
+
+    # Aplica imediatamente no buffer e nas configurações em memória
+    if new_config.debounce_silence_seconds is not None:
+        st.buffer.silence_seconds = new_config.debounce_silence_seconds
+    if new_config.debounce_max_window_seconds is not None:
+        st.buffer.max_window_seconds = new_config.debounce_max_window_seconds
+    st.settings.split_messages = new_config.split_messages
     return await sandbox.status()
 
 

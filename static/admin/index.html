@@ -84,11 +84,23 @@
               <span>Sessão de teste (min)</span>
               <input id="sandbox-ttl" type="number" min="1" max="1440">
             </label>
-            <label class="field span-2">
+            <label class="field span-3">
               <span>Comandos de parada / reset</span>
               <input id="sandbox-stops" placeholder="/parar, /reset">
             </label>
+            <label class="field">
+              <span class="row-between"><span>Tempo de Silêncio do Debounce</span><strong id="sandbox-silence-val" class="mono">8s</strong></span>
+              <input id="sandbox-silence" type="range" min="2" max="30" step="1" value="8">
+            </label>
+            <label class="field">
+              <span class="row-between"><span>Janela Máxima de Coleta</span><strong id="sandbox-max-window-val" class="mono">20s</strong></span>
+              <input id="sandbox-max-window" type="range" min="5" max="60" step="1" value="20">
+            </label>
             <div class="field field-action">
+              <label class="check" style="margin-bottom:6px">
+                <input type="checkbox" id="sandbox-split-messages" checked>
+                <span>Ativar Envio Humanizado em Partes</span>
+              </label>
               <button class="btn btn-primary" id="btn-save-sandbox">💾 Salvar regras</button>
             </div>
           </div>
@@ -159,7 +171,7 @@
             </form>
             <div class="wa-options">
               <label class="check"><input type="checkbox" id="pg-immediate"> Lote imediato (sem debounce)</label>
-              <label class="check">Silêncio <input id="pg-silence" type="number" min="1" max="8" step="0.5" value="4"> s</label>
+              <label class="check">Silêncio <input id="pg-silence" type="number" min="1" max="30" step="0.5" value="4"> s</label>
             </div>
           </div>
         </article>

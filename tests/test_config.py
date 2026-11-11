@@ -88,7 +88,7 @@ def test_integration_flags():
 
 @pytest.mark.parametrize(
     ("silence", "max_window"),
-    [(8, 8), (8, 5), (0.5, 10), (9, 20)],
+    [(8, 8), (8, 5), (0.5, 10), (31, 60), (10, 65)],
 )
 def test_invalid_debounce_windows(silence, max_window):
     with pytest.raises(ValidationError):

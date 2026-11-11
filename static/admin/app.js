@@ -252,6 +252,22 @@
       $("#sandbox-triggers").value = cfg.trigger_keywords.join(", ");
       $("#sandbox-stops").value = cfg.stop_keywords.join(", ");
       $("#sandbox-ttl").value = cfg.session_ttl_minutes;
+      const sil = cfg.debounce_silence_seconds ?? S.overview?.debounce?.silence_seconds ?? 8;
+      const win = cfg.debounce_max_window_seconds ?? S.overview?.debounce?.max_window_seconds ?? 20;
+      const silEl = $("#sandbox-silence");
+      const winEl = $("#sandbox-max-window");
+      if (silEl) {
+        silEl.value = sil;
+        const lbl = $("#sandbox-silence-val");
+        if (lbl) lbl.textContent = `${sil}s`;
+      }
+      if (winEl) {
+        winEl.value = win;
+        const lbl = $("#sandbox-max-window-val");
+        if (lbl) lbl.textContent = `${win}s`;
+      }
+      const splitEl = $("#sandbox-split-messages");
+      if (splitEl) splitEl.checked = cfg.split_messages !== false;
     }
     const phones = cfg.allowed_phones.map((p) => `<span class="chip chip-info">📱 ${esc(p)}<button data-phone="${esc(p)}" title="Remover">×</button></span>`);
     const seeds = sb.seed_phones.map((p) => `<span class="chip chip-lock" title="Definido em SANDBOX_ALLOWED_PHONES (.env)">🔒 ${esc(p)} · .env</span>`);
@@ -298,15 +314,47 @@
     renderSandbox();
   });
 
+  $("#sandbox-silence")?.addEventListener("input", (ev) => {
+    const v = Number(ev.target.value);
+    const lbl = $("#sandbox-silence-val");
+    if (lbl) lbl.textContent = `${v}s`;
+    const winEl = $("#sandbox-max-window");
+    if (winEl && Number(winEl.value) <= v) {
+      const next = Math.min(60, v + 5);
+      winEl.value = next;
+      const wLbl = $("#sandbox-max-window-val");
+      if (wLbl) wLbl.textContent = `${next}s`;
+    }
+  });
+
+  $("#sandbox-max-window")?.addEventListener("input", (ev) => {
+    const v = Number(ev.target.value);
+    const lbl = $("#sandbox-max-window-val");
+    if (lbl) lbl.textContent = `${v}s`;
+  });
+
   $("#btn-save-sandbox").addEventListener("click", async (ev) => {
     const split = (v) => v.split(/[,\s]+/).map((x) => x.trim()).filter(Boolean);
+    const sil = Number($("#sandbox-silence")?.value || 8);
+    let win = Number($("#sandbox-max-window")?.value || 20);
+    if (win <= sil) win = Math.min(60, sil + 2);
     const body = {
       trigger_keywords: split($("#sandbox-triggers").value),
       stop_keywords: split($("#sandbox-stops").value),
       session_ttl_minutes: Number($("#sandbox-ttl").value),
+      debounce_silence_seconds: sil,
+      debounce_max_window_seconds: win,
+      split_messages: $("#sandbox-split-messages") ? $("#sandbox-split-messages").checked : true,
     };
-    const r = await act(ev.currentTarget, "Regras do Sandbox salvas", () => api("PUT", "/api/admin/sandbox", body));
-    if (r.ok) { S.sandbox = r.data; renderSandbox(); }
+    const r = await act(ev.currentTarget, "Regras do Sandbox e Debounce salvas", () => api("PUT", "/api/admin/sandbox", body));
+    if (r.ok) {
+      S.sandbox = r.data;
+      if (S.overview?.debounce) {
+        S.overview.debounce.silence_seconds = sil;
+        S.overview.debounce.max_window_seconds = win;
+      }
+      renderSandbox();
+    }
   });
 
   $("#form-phone").addEventListener("submit", async (ev) => {
@@ -736,10 +784,16 @@
           ${field("Provedor WhatsApp", sel("tenant.whatsapp_provider", ["waha", "astracalls"]))}
           ${field("Sessão WhatsApp", inp("tenant.whatsapp_session_id", "str?", 'placeholder="ex.: Danyllo"'))}
           ${field("CRM", sel("tenant.crm_provider", ["chatwoot", "ghl", "none"], 'data-act="crm-provider"'))}
-          ${field("Silêncio do debounce (s)", inp("tenant.debounce_silence_seconds", "num?", 'type="number" min="1" max="8" step="0.5" placeholder="padrão global"'))}
-          ${field("Teto máximo do lote (s)", inp("tenant.debounce_max_window_seconds", "num?", 'type="number" min="2" max="30" step="0.5" placeholder="padrão global"'))}
+          <label class="field span-2">
+            <span>⏱️ Silêncio para fechar o lote (debounce): <strong id="tn-silence-val" class="mono">${esc(t.debounce_silence_seconds ?? S.overview?.debounce?.silence_seconds ?? 8)}s</strong></span>
+            <input type="range" data-path="tenant.debounce_silence_seconds" data-type="num?" min="2" max="30" step="1" value="${esc(t.debounce_silence_seconds ?? S.overview?.debounce?.silence_seconds ?? 8)}">
+          </label>
+          <label class="field span-2">
+            <span>⏳ Teto máximo da janela de espera: <strong id="tn-max-window-val" class="mono">${esc(t.debounce_max_window_seconds ?? S.overview?.debounce?.max_window_seconds ?? 20)}s</strong></span>
+            <input type="range" data-path="tenant.debounce_max_window_seconds" data-type="num?" min="5" max="60" step="1" value="${esc(t.debounce_max_window_seconds ?? S.overview?.debounce?.max_window_seconds ?? 20)}">
+          </label>
         </div>
-        <div class="chips" style="margin-top:12px">${chk("tenant.active", "Cliente ativo (webhook atende)")}${chk("demo_data", "Dados de demonstração (demo_data) — bloqueados em produção")}</div>
+        <div class="chips" style="margin-top:12px">${chk("tenant.active", "Cliente ativo (webhook atende)")}${chk("tenant.split_messages", "Ativar Envio Humanizado em Partes (picotar mensagens longas)")}${chk("demo_data", "Dados de demonstração (demo_data) — bloqueados em produção")}</div>
         <div class="divider"></div>
         <h3>🔌 CRM (${esc(t.crm_provider)})</h3>
         ${crmBlock}
@@ -802,6 +856,13 @@
       return;
     }
     if (!el.dataset.path) return;
+    if (el.dataset.path === "tenant.debounce_silence_seconds") {
+      const lbl = $("#tn-silence-val");
+      if (lbl) lbl.textContent = `${el.value}s`;
+    } else if (el.dataset.path === "tenant.debounce_max_window_seconds") {
+      const lbl = $("#tn-max-window-val");
+      if (lbl) lbl.textContent = `${el.value}s`;
+    }
     setPath(S.draft, el.dataset.path, convert(el));
     setDirty(true);
   });

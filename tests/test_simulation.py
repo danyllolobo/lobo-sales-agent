@@ -289,9 +289,9 @@ async def test_e2e_three_rapid_messages_debounced_into_single_turn_with_real_pri
         assert "Grátis" in turn.reply_text
         assert "1 a 2 dias úteis" in turn.reply_text
 
-        # 4. OutgoingMessage despachado pelo gateway com "composing" antes
-        assert len(gateway.sent_messages) == 1
-        assert gateway.sent_messages[0].text == turn.reply_text
+        # 4. OutgoingMessage despachado pelo gateway em blocos humanizados com "composing" antes
+        assert len(gateway.sent_messages) >= 2
+        assert "\n\n".join(m.text for m in gateway.sent_messages) == turn.reply_text
         assert any(composing is True for _, _, composing in gateway.typing_events)
 
         # 5. Perfil do lead enriquecido e qualificado

@@ -233,6 +233,7 @@ class IncomingMessage(_PhoneMaskedModel):
     location: GeoLocation | None = None
     transcription: str | None = None
     quoted_message_id: str | None = None
+    quoted_text: str | None = None
     # Origem "Click to WhatsApp" (anúncio Meta Ads): ctwaClid, sourceId, sourceUrl...
     ad_referral: dict[str, Any] | None = None
 
@@ -250,7 +251,7 @@ class IncomingMessage(_PhoneMaskedModel):
     def _validate_timestamp(cls, v: datetime) -> datetime:
         return _ensure_utc(v)
 
-    @field_validator("text", "contact_name", "transcription")
+    @field_validator("text", "contact_name", "transcription", "quoted_text")
     @classmethod
     def _empty_to_none(cls, v: str | None) -> str | None:
         return v or None
@@ -271,24 +272,28 @@ class IncomingMessage(_PhoneMaskedModel):
         caption = self.media.caption if self.media and self.media.caption else None
         match self.type:
             case MessageType.TEXT:
-                return self.text or ""
+                base = self.text or ""
             case MessageType.AUDIO:
-                return self.transcription or "[áudio sem transcrição]"
+                base = self.transcription or "[áudio sem transcrição]"
             case MessageType.IMAGE:
-                return f"[imagem] {caption}" if caption else "[imagem enviada pelo cliente]"
+                base = f"[imagem] {caption}" if caption else "[imagem enviada pelo cliente]"
             case MessageType.VIDEO:
-                return f"[vídeo] {caption}" if caption else "[vídeo enviado pelo cliente]"
+                base = f"[vídeo] {caption}" if caption else "[vídeo enviado pelo cliente]"
             case MessageType.DOCUMENT:
                 name = self.media.filename if self.media and self.media.filename else "documento"
-                return f"[documento: {name}] {caption or ''}".strip()
+                base = f"[documento: {name}] {caption or ''}".strip()
             case MessageType.STICKER:
-                return "[figurinha]"
+                base = "[figurinha]"
             case MessageType.LOCATION:
                 loc = self.location
                 label = (loc.address or loc.name) if loc else None
-                return f"[localização] {label}" if label else "[localização compartilhada]"
+                base = f"[localização] {label}" if label else "[localização compartilhada]"
             case _:
-                return self.text or "[mensagem não suportada]"
+                base = self.text or "[mensagem não suportada]"
+
+        if self.quoted_text:
+            return f'[Lead respondeu citando a mensagem: "{self.quoted_text}"]\n{base}'
+        return base
 
     @property
     def needs_transcription(self) -> bool:
@@ -539,6 +544,119 @@ class LeadProfile(_PhoneMaskedModel):
         }
 
 
+_LIST_LINE_RE = re.compile(r"^\s*(?:[-*•]|\d+[.)]|[1-9]️⃣)\s+")
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def _split_long_line_by_words(text: str, max_chars: int) -> list[str]:
+    words = text.split()
+    if not words:
+        return []
+    chunks: list[str] = []
+    current = words[0]
+    for word in words[1:]:
+        candidate = f"{current} {word}"
+        if len(candidate) <= max_chars:
+            current = candidate
+        else:
+            chunks.append(current)
+            current = word
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def _split_long_block_by_sentences(block: str, max_chars: int) -> list[str]:
+    sentences = [s.strip() for s in _SENTENCE_SPLIT_RE.split(block.strip()) if s.strip()]
+    if not sentences:
+        return []
+    chunks: list[str] = []
+    current = ""
+    for sentence in sentences:
+        if len(sentence) > max_chars:
+            if current:
+                chunks.append(current)
+                current = ""
+            chunks.extend(_split_long_line_by_words(sentence, max_chars))
+            continue
+        candidate = f"{current} {sentence}".strip() if current else sentence
+        if len(candidate) <= max_chars:
+            current = candidate
+        else:
+            chunks.append(current)
+            current = sentence
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def _split_paragraph(para: str, max_chars: int) -> list[str]:
+    if len(para) <= max_chars:
+        lines = [ln.strip() for ln in para.splitlines() if ln.strip()]
+        if len(lines) >= 3 and not _LIST_LINE_RE.match(lines[0]) and all(_LIST_LINE_RE.match(ln) for ln in lines[1:]):
+            # Se o parágrafo for longo (> 240 chars) e tiver introdução + lista, separa a introdução da lista
+            if len(para) > 240:
+                return [lines[0], "\n".join(lines[1:])]
+        return [para]
+
+    if "\n" in para:
+        lines = [ln.strip() for ln in para.splitlines() if ln.strip()]
+        chunks: list[str] = []
+        current = ""
+        for line in lines:
+            if len(line) > max_chars:
+                if current:
+                    chunks.append(current)
+                    current = ""
+                chunks.extend(_split_long_block_by_sentences(line, max_chars))
+                continue
+            candidate = f"{current}\n{line}" if current else line
+            if len(candidate) <= max_chars:
+                current = candidate
+            else:
+                chunks.append(current)
+                current = line
+        if current:
+            chunks.append(current)
+        return chunks
+
+    return _split_long_block_by_sentences(para, max_chars)
+
+
+def split_human_chunks(text: str, max_chars: int = 400, max_chunks: int = 4) -> list[str]:
+    """Divide respostas longas em blocos naturais de WhatsApp (2 a 4 partes).
+
+    - Primeiro divide por quebras duplas de parágrafo (`\\n\\n`).
+    - Mantém listas coesas ou separa a introdução da lista quando necessário.
+    - Quebra parágrafos que excedam `max_chars` por frases/palavras sem cortar palavras ao meio.
+    """
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return []
+    max_chars = max(80, int(max_chars))
+    max_chunks = max(1, int(max_chunks))
+
+    raw_paragraphs = [p.strip() for p in re.split(r"\n\s*\n+", cleaned) if p.strip()]
+    chunks: list[str] = []
+    for para in raw_paragraphs:
+        chunks.extend(_split_paragraph(para, max_chars))
+
+    # Se houver mais partes que `max_chunks`, agrupa os blocos adjacentes menores que caibam em `max_chars`
+    while len(chunks) > max_chunks:
+        best_idx = -1
+        best_len = max_chars + 1
+        for i in range(len(chunks) - 1):
+            combined_len = len(chunks[i]) + 2 + len(chunks[i + 1])
+            if combined_len <= max_chars and combined_len < best_len:
+                best_len = combined_len
+                best_idx = i
+        if best_idx < 0:
+            break
+        chunks[best_idx : best_idx + 2] = [f"{chunks[best_idx]}\n\n{chunks[best_idx + 1]}"]
+
+    return chunks
+
+
 # --------------------------------------------------------------------------- #
 # Tenant
 # --------------------------------------------------------------------------- #
@@ -557,8 +675,9 @@ class TenantConfig(BaseModel):
     active: bool = True
 
     # Sobrescrevem os padrões globais de `Settings` quando definidos
-    debounce_silence_seconds: float | None = Field(default=None, ge=1.0, le=8.0)
-    debounce_max_window_seconds: float | None = Field(default=None, ge=2.0, le=30.0)
+    debounce_silence_seconds: float | None = Field(default=None, ge=1.0, le=30.0)
+    debounce_max_window_seconds: float | None = Field(default=None, ge=2.0, le=60.0)
+    split_messages: bool = True
 
     @field_validator("timezone")
     @classmethod

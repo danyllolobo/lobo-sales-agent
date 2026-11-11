@@ -194,6 +194,7 @@ input, select, textarea {
 textarea { resize: vertical; }
 input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
 input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); padding: 0; }
+input[type="range"] { padding: 4px 0; border: 0; background: transparent; accent-color: var(--accent); cursor: pointer; box-shadow: none !important; }
 .check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; user-select: none; }
 .check input[type="number"] { width: 64px; padding: 5px 8px; }
 .inline-form { display: flex; gap: 8px; margin: 10px 0; }

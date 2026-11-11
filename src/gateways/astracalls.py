@@ -15,10 +15,11 @@ Referência: github.com/AstraOnlineWeb/AstraCalls (client/public/openapi.yaml, c
 from __future__ import annotations
 
 import base64
+import json
 import logging
 from collections.abc import Mapping
 from typing import Any, ClassVar
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
 from pydantic import SecretStr, ValidationError
@@ -143,6 +144,7 @@ class AstraCallsGateway(WhatsAppGateway):
 
         push_name = (data.get("pushName") or "").strip() or None
         referral = data.get("referral")
+        quoted_id, quoted_text = self._extract_quoted(data, raw)
         try:
             message = IncomingMessage(
                 message_id=msg_id,
@@ -156,7 +158,8 @@ class AstraCallsGateway(WhatsAppGateway):
                 text=text if msg_type is MessageType.TEXT else None,
                 media=media,
                 location=location,
-                quoted_message_id=data.get("quotedMessageId") or None,
+                quoted_message_id=quoted_id,
+                quoted_text=quoted_text,
                 ad_referral=dict(referral) if isinstance(referral, Mapping) else None,
                 from_me=from_me,
                 timestamp=epoch_to_datetime(data.get("timestamp")) or utcnow(),
@@ -167,6 +170,49 @@ class AstraCallsGateway(WhatsAppGateway):
 
         result.messages.append(message)
         return result
+
+    @staticmethod
+    def _extract_quoted(data: Mapping[str, Any], raw: Mapping[str, Any]) -> tuple[str | None, str | None]:
+        """Extrai o ID e o texto da mensagem citada em payloads AstraCalls / whatsmeow."""
+        ctx_candidates = (
+            data.get("contextInfo"),
+            raw.get("contextInfo"),
+            dig(raw, "extendedTextMessage", "contextInfo"),
+            dig(raw, "imageMessage", "contextInfo"),
+            dig(raw, "audioMessage", "contextInfo"),
+            dig(raw, "videoMessage", "contextInfo"),
+            dig(raw, "documentMessage", "contextInfo"),
+            dig(raw, "buttonsResponseMessage", "contextInfo"),
+            dig(raw, "listResponseMessage", "contextInfo"),
+        )
+        ctx = next((c for c in ctx_candidates if isinstance(c, Mapping)), {})
+        quoted_msg = (
+            ctx.get("quotedMessage")
+            or data.get("quotedMessage")
+            or raw.get("quotedMessage")
+            or {}
+        )
+        quoted_msg = quoted_msg if isinstance(quoted_msg, Mapping) else {}
+
+        quoted_id_raw = data.get("quotedMessageId") or ctx.get("stanzaId") or ctx.get("stanzaID")
+        quoted_id = str(quoted_id_raw).strip() if quoted_id_raw else None
+
+        text_candidates = (
+            data.get("quotedText"),
+            data.get("quoted_text"),
+            quoted_msg.get("conversation"),
+            dig(quoted_msg, "extendedTextMessage", "text"),
+            quoted_msg.get("text"),
+            dig(quoted_msg, "imageMessage", "caption"),
+            dig(quoted_msg, "videoMessage", "caption"),
+            dig(quoted_msg, "documentMessage", "caption"),
+            dig(quoted_msg, "buttonsMessage", "contentText"),
+        )
+        quoted_text = next(
+            (str(c).strip() for c in text_candidates if isinstance(c, str) and c.strip()),
+            None,
+        )
+        return quoted_id, quoted_text
 
     @staticmethod
     def _media_from_raw(raw: Mapping[str, Any], type_str: str, msg_id: str, caption: str | None) -> MediaAttachment:
@@ -281,13 +327,47 @@ class AstraCallsGateway(WhatsAppGateway):
     async def download_media(self, message: IncomingMessage) -> bytes:
         media = message.media
         if media is None:
-            raise GatewayError("AstraCalls: mensagem sem mídia")
+            raise GatewayError("AstraCalls: mensagem sem mídia", tenant_id=message.tenant_id)
         if media.data_base64:
             return base64.b64decode(media.data_base64.split(",", 1)[-1])
+
+        candidates: list[tuple[str, str]] = []
+        if media.url:
+            parts = urlsplit(media.url)
+            path_q = parts.path + (f"?{parts.query}" if parts.query else "")
+            candidates.append((parts.path, f"{self.base_url}{path_q}"))
+
         media_id = media.provider_media_id or message.message_id
-        return await self._request(
-            "GET",
-            self._session_path(message.session_id, f"messages/{quote(media_id, safe='')}/media"),
-            expect_json=False,
-            log_contact=message.contact_phone,
-        )
+        msg_path = self._session_path(message.session_id, f"messages/{quote(media_id, safe='')}/media")
+        candidates.append((msg_path, f"{self.base_url}{msg_path}"))
+
+        last_err: GatewayError | None = None
+        for path_label, full_url in candidates:
+            try:
+                raw_bytes: bytes = await self._request(
+                    "GET",
+                    path_label,
+                    absolute_url=full_url,
+                    headers={"Accept": "*/*"},
+                    expect_json=False,
+                    log_contact=message.contact_phone,
+                )
+                stripped = raw_bytes.lstrip()
+                if stripped.startswith(b"{"):
+                    try:
+                        obj = json.loads(stripped.decode("utf-8"))
+                        if isinstance(obj, Mapping):
+                            b64 = obj.get("base64") or obj.get("data_base64") or obj.get("data")
+                            if isinstance(b64, str) and b64.strip():
+                                return base64.b64decode(b64.strip().split(",", 1)[-1])
+                    except (UnicodeDecodeError, ValueError):
+                        pass
+                if raw_bytes:
+                    return raw_bytes
+            except GatewayError as exc:
+                last_err = exc
+                logger.warning("AstraCalls: falha ao baixar mídia em %s (%s), tentando fallback", path_label, exc.message)
+
+        if last_err is not None:
+            raise last_err
+        raise GatewayError("AstraCalls: não foi possível baixar a mídia", tenant_id=message.tenant_id)

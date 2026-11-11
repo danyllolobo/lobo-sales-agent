@@ -87,9 +87,10 @@ class Settings(BaseSettings):
     ghl_vizzu_api_token: SecretStr | None = None
     ghl_vizzu_location_id: str | None = None
 
-    # --- Debounce (padrão global; pode ser sobrescrito por tenant) ---
-    debounce_silence_seconds: float = Field(default=4.0, ge=1.0, le=8.0)
-    debounce_max_window_seconds: float = Field(default=10.0, ge=2.0, le=30.0)
+    # --- Debounce & Humanização (padrão global; pode ser sobrescrito por tenant) ---
+    debounce_silence_seconds: float = Field(default=4.0, ge=1.0, le=30.0)
+    debounce_max_window_seconds: float = Field(default=10.0, ge=2.0, le=60.0)
+    split_messages: bool = True
 
     # --- Dados dos tenants & handoff ---
     tenant_data_dir: Path = PROJECT_ROOT / "data" / "tenants"

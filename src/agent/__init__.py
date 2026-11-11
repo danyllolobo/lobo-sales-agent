@@ -8,6 +8,7 @@ from src.agent.graph import (
     build_sales_graph,
     route_after_commercial,
     route_after_triage,
+    split_human_chunks,
 )
 from src.agent.jev_guard import (
     JEVDecision,
@@ -24,7 +25,7 @@ from src.agent.nodes import (
 )
 from src.agent.prompts import build_system_prompt
 from src.agent.state import AgentIntent, AgentState, ConversationStage, TurnResult
-from src.agent.transcription import AudioTranscriber
+from src.agent.transcription import AudioTranscriber, normalize_audio_mimetype
 
 __all__ = [
     "AgentIntent",
@@ -44,8 +45,10 @@ __all__ = [
     "create_gemini_chat_model",
     "extract_authorized_prices",
     "extract_lead_attributes",
+    "normalize_audio_mimetype",
     "route_after_commercial",
     "route_after_triage",
+    "split_human_chunks",
     "verify_no_unbacked_prices",
 ]
 

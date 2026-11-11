@@ -412,7 +412,13 @@ class DeterministicSalesChatModel(BaseChatModel):
         )
         if any(f" {t} " in norm or t in norm for t in catalog_triggers):
             # Extrai a linha/trecho relevante de produto para uma busca limpa
-            product_lines = [
+            non_quoted_product_lines = [
+                line.strip()
+                for line in user_text.splitlines()
+                if not line.strip().startswith("[Lead respondeu citando")
+                and any(t in normalize_text(line) for t in catalog_triggers)
+            ]
+            product_lines = non_quoted_product_lines or [
                 line.strip()
                 for line in user_text.splitlines()
                 if any(t in normalize_text(line) for t in catalog_triggers)

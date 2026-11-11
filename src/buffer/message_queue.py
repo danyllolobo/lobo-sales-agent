@@ -230,7 +230,10 @@ class MessageBuffer:
             return PushResult(accepted=False, reason="from_me")
 
         silence = silence_seconds if silence_seconds is not None else self.silence_seconds
-        max_window = max_window_seconds if max_window_seconds is not None else self.max_window_seconds
+        if max_window_seconds is not None:
+            max_window = max_window_seconds
+        else:
+            max_window = max(self.max_window_seconds, silence + 5.0) if silence_seconds is not None else self.max_window_seconds
         self._validate_windows(silence, max_window)
 
         base = key.redis_base(self._prefix)
