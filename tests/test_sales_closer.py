@@ -131,9 +131,10 @@ async def test_scenario_1_ad_lead_wants_other_models_shows_featured_highlights_z
     assert res.reply_text is not None
     _assert_zero_robot_jargon(res.reply_text)
 
-    # 2. Acolhe mencionando o anúncio
+    # 2. Acolhe com naturalidade humana de loja (sem meta-linguagem robótica como "Vi que você veio pelo nosso anúncio")
     reply_lower = res.reply_text.lower()
-    assert "anúncio" in reply_lower or "anuncio" in reply_lower
+    assert "seja muito bem-vindo" in reply_lower
+    assert "vi que você veio pelo nosso anúncio" not in reply_lower
     assert res.lead.source == "meta_ads"
 
     # 3. Apresenta 2 ou 3 destaques do catálogo (carros-chefes) com preços validados da tool

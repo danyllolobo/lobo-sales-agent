@@ -544,8 +544,28 @@ class LeadProfile(_PhoneMaskedModel):
         }
 
 
-_LIST_LINE_RE = re.compile(r"^\s*(?:[-*•]|\d+[.)]|[1-9]️⃣)\s+")
+_LIST_LINE_RE = re.compile(r"^\s*(?:✅|•|[-*]\s+|\d+[.)]\s+|[1-9]️⃣)")
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+_BROKEN_BOLD_RE = re.compile(r"\*{2,}([^*\n]+?)\*{1,}|\*{1,}([^*\n]+?)\*{2,}")
+
+
+def sanitize_whatsapp_formatting(text: str) -> str:
+    """Converte negritos Markdown (`**texto**` ou `**texto*`) para o padrão nativo do WhatsApp (`*texto*`)."""
+    if not text:
+        return ""
+
+    def _repl(match: re.Match[str]) -> str:
+        inner = (match.group(1) or match.group(2) or "").strip()
+        return f"*{inner}*" if inner else ""
+
+    return _BROKEN_BOLD_RE.sub(_repl, text)
+
+
+def _is_list_paragraph(para: str) -> bool:
+    lines = [ln.strip() for ln in para.splitlines() if ln.strip()]
+    if not lines:
+        return False
+    return bool(_LIST_LINE_RE.match(lines[0]))
 
 
 def _split_long_line_by_words(text: str, max_chars: int) -> list[str]:
@@ -591,10 +611,13 @@ def _split_long_block_by_sentences(block: str, max_chars: int) -> list[str]:
 
 
 def _split_paragraph(para: str, max_chars: int) -> list[str]:
+    # Se for um bloco de lista semântica (✅, •, -), NUNCA corta a lista ao meio
+    if _is_list_paragraph(para):
+        return [para]
+
     if len(para) <= max_chars:
         lines = [ln.strip() for ln in para.splitlines() if ln.strip()]
         if len(lines) >= 3 and not _LIST_LINE_RE.match(lines[0]) and all(_LIST_LINE_RE.match(ln) for ln in lines[1:]):
-            # Se o parágrafo for longo (> 240 chars) e tiver introdução + lista, separa a introdução da lista
             if len(para) > 240:
                 return [lines[0], "\n".join(lines[1:])]
         return [para]
@@ -624,11 +647,15 @@ def _split_paragraph(para: str, max_chars: int) -> list[str]:
 
 
 def split_human_chunks(text: str, max_chars: int = 400, max_chunks: int = 4) -> list[str]:
-    """Divide respostas longas em blocos naturais de WhatsApp (2 a 4 partes).
+    """Divide respostas longas em blocos semânticos naturais de WhatsApp.
 
-    - Primeiro divide por quebras duplas de parágrafo (`\\n\\n`).
-    - Mantém listas coesas ou separa a introdução da lista quando necessário.
-    - Quebra parágrafos que excedam `max_chars` por frases/palavras sem cortar palavras ao meio.
+    Regras de Chunking Semântico:
+    - Se o texto contiver uma lista de produtos/serviços (`✅`, `•`, `-`, `1️⃣`),
+      todos os itens da lista permanecem JUNTOS em um único bloco (nunca corta a lista ao meio!).
+    - Divide entre:
+      * Bloco 1: Acolhimento e resposta direta à dúvida.
+      * Bloco 2: O card/lista de opções completo.
+      * Bloco 3: Pergunta consultiva de fechamento / convite para a loja.
     """
     cleaned = (text or "").strip()
     if not cleaned:
@@ -637,8 +664,57 @@ def split_human_chunks(text: str, max_chars: int = 400, max_chunks: int = 4) -> 
     max_chunks = max(1, int(max_chunks))
 
     raw_paragraphs = [p.strip() for p in re.split(r"\n\s*\n+", cleaned) if p.strip()]
-    chunks: list[str] = []
+
+    # 1. Separa cabeçalho introdutório colado na primeira linha de uma lista (ex.: "Destaques:\n• Item 1\n• Item 2")
+    expanded_paragraphs: list[str] = []
     for para in raw_paragraphs:
+        lines = [ln.strip() for ln in para.splitlines() if ln.strip()]
+        first_list_idx = next((i for i, ln in enumerate(lines) if _LIST_LINE_RE.match(ln)), -1)
+        if first_list_idx > 0:
+            intro_part = "\n".join(lines[:first_list_idx]).strip()
+            list_part = "\n".join(lines[first_list_idx:]).strip()
+            if intro_part:
+                expanded_paragraphs.append(intro_part)
+            if list_part:
+                expanded_paragraphs.append(list_part)
+        else:
+            expanded_paragraphs.append(para)
+
+    # 2. Agrupa parágrafos de lista consecutivos (`✅`, `•`, `-`) em um ÚNICO bloco indivisível
+    grouped_paragraphs: list[str] = []
+    for para in expanded_paragraphs:
+        if _is_list_paragraph(para) and grouped_paragraphs and _is_list_paragraph(grouped_paragraphs[-1]):
+            grouped_paragraphs[-1] = f"{grouped_paragraphs[-1]}\n\n{para}"
+        else:
+            grouped_paragraphs.append(para)
+
+    has_semantic_list = any(_is_list_paragraph(p) for p in grouped_paragraphs)
+    if has_semantic_list and len(grouped_paragraphs) > 1:
+        # Estrutura em até 3 blocos semânticos: [Acolhimento/Intro] + [Lista Completa] + [Fechamento/CTA]
+        pre_list: list[str] = []
+        list_blocks: list[str] = []
+        post_list: list[str] = []
+        seen_list = False
+        for para in grouped_paragraphs:
+            if _is_list_paragraph(para):
+                seen_list = True
+                list_blocks.append(para)
+            elif not seen_list:
+                pre_list.append(para)
+            else:
+                post_list.append(para)
+
+        semantic_chunks: list[str] = []
+        if pre_list:
+            semantic_chunks.append("\n\n".join(pre_list))
+        if list_blocks:
+            semantic_chunks.append("\n\n".join(list_blocks))
+        if post_list:
+            semantic_chunks.append("\n\n".join(post_list))
+        return semantic_chunks[:max_chunks] if max_chunks >= len(semantic_chunks) else semantic_chunks
+
+    chunks: list[str] = []
+    for para in grouped_paragraphs:
         chunks.extend(_split_paragraph(para, max_chars))
 
     # Se houver mais partes que `max_chunks`, agrupa os blocos adjacentes menores que caibam em `max_chars`
@@ -646,6 +722,8 @@ def split_human_chunks(text: str, max_chars: int = 400, max_chunks: int = 4) -> 
         best_idx = -1
         best_len = max_chars + 1
         for i in range(len(chunks) - 1):
+            if _is_list_paragraph(chunks[i]) or _is_list_paragraph(chunks[i + 1]):
+                continue
             combined_len = len(chunks[i]) + 2 + len(chunks[i + 1])
             if combined_len <= max_chars and combined_len < best_len:
                 best_len = combined_len
@@ -661,6 +739,7 @@ def split_human_chunks(text: str, max_chars: int = 400, max_chunks: int = 4) -> 
 # Tenant
 # --------------------------------------------------------------------------- #
 SUPPORTED_LLM_MODELS: tuple[str, ...] = (
+    "default",
     "gemini-3.8-flash",
     "gemini-2.5-pro",
     "gemini-3-pro",
@@ -680,11 +759,12 @@ class TenantConfig(BaseModel):
     segment: Segment = Segment.GENERIC
     whatsapp_provider: Provider = Provider.WAHA
     whatsapp_session_id: str | None = None
+    webhook_secret: str | None = None
     crm_provider: CRMProvider = CRMProvider.NONE
     timezone: str = "America/Sao_Paulo"
     active: bool = True
 
-    # Modelo de IA do cliente (Flash p/ velocidade ou Pro p/ raciocínio profundo)
+    # Modelo de IA do cliente ("default" usa o padrão global; ou modelo específico)
     llm_model: str = Field(default="gemini-3.8-flash", min_length=1)
 
     # Sobrescrevem os padrões globais de `Settings` quando definidos

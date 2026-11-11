@@ -58,6 +58,7 @@ from src.core.schemas import (
     Provider,
     Segment,
     StandardTag,
+    sanitize_whatsapp_formatting,
     utcnow,
 )
 from src.crm.base import CRMConnector
@@ -458,11 +459,12 @@ class DeterministicSalesChatModel(BaseChatModel):
                 query_text = " ".join(product_lines) if product_lines else user_text
             add_call("search_catalog", {"query": query_text})
 
-        # 3. Entrega / Frete
+        # 3. Entrega / Frete / Bairros da Região Metropolitana de Belém
         attrs = extract_lead_attributes(user_text)
+        bairro = attrs.get("bairro")
         city = attrs.get("cidade")
-        if any(k in norm for k in (" entrega", " entregam", " frete", " enviam")):
-            target_city = city
+        if bairro or any(k in norm for k in (" entrega", " entregam", " frete", " enviam")):
+            target_city = bairro or city
             if not target_city:
                 # Tenta capturar palavra após "em " ou "para "
                 m = re.search(r"\b(?:em|para)\s+([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+)?)", user_text)
@@ -581,38 +583,27 @@ class DeterministicSalesChatModel(BaseChatModel):
             )
         )
         has_ad_context = "Origem do lead: Anúncio" in sys_text or "origem_anuncio=meta_ads" in sys_text
-        ad_headline_match = re.search(r"ad_headline=([^,\n.]+)", sys_text)
-        ad_topic = ad_headline_match.group(1).strip() if ad_headline_match else None
 
         if is_booking_request:
-            ad_intro = (
-                f"Vi que você veio pelo nosso anúncio sobre **{ad_topic}** — vai ser um enorme prazer te atender! "
-                if ad_topic
-                else (
-                    "Vi que você veio pelo nosso anúncio — vai ser um enorme prazer te atender! "
-                    if has_ad_context
-                    else ""
-                )
-            )
             if "segmento: `psychology`" in sys_text:
                 return (
-                    f"Olá{f', {lead_name}' if lead_name else ''}! Seja muito bem-vindo(a) à Vizzu Psicologia! 😊 "
-                    f"{ad_intro}Com certeza vamos organizar o seu agendamento!\n\n"
-                    "Para eu separar o profissional com a **especialidade** ideal para o seu horário: "
-                    "o atendimento seria para **você (adulto)** ou para um **filho/dependente (qual a idade)**? "
-                    "E você busca **psicoterapia** ou **avaliação neuropsicológica** (e já fez terapia antes ou seria a primeira vez)?"
+                    f"Olá{f', {lead_name}' if lead_name else ''}! Tudo bem? Seja muito bem-vindo(a) à Vizzu Psicologia! 😊 "
+                    "Com certeza vamos organizar o seu agendamento!\n\n"
+                    "Para eu separar o profissional com a *especialidade* ideal para o seu horário: "
+                    "o atendimento seria para *você (adulto)* ou para um *filho/dependente (qual a idade)*? "
+                    "E você busca *psicoterapia* ou *avaliação neuropsicológica* (e já fez terapia antes ou seria a primeira vez)?"
                 )
             if "segmento: `pools`" in sys_text:
                 return (
-                    f"Olá{f', {lead_name}' if lead_name else ''}! Seja muito bem-vindo(a) à Splash Piscinas! 🏊‍♂️ "
-                    f"{ad_intro}Maravilha! Antes de agendarmos a visita técnica no seu espaço:\n\n"
-                    "Você fala de qual **cidade** e já tem uma ideia do **tamanho de piscina** que cabe no seu terreno (ex.: 6x3m, 7x3,5m ou 8x4m)?"
+                    f"Opa{f', {lead_name}' if lead_name else ''}! Tudo bom? Seja muito bem-vindo(a) à Splash Piscinas! 🏊‍♂️ "
+                    "Maravilha! Antes de agendarmos a visita técnica no seu espaço:\n\n"
+                    "Você fala de qual *cidade* e já tem uma ideia do *tamanho de piscina* que cabe no seu terreno (ex.: 6x3m, 7x3,5m ou 8x4m)?"
                 )
             return (
-                f"Olá{f', {lead_name}' if lead_name else ''}! Seja muito bem-vindo(a) à Companhia dos Sonhos! 😊 "
-                f"{ad_intro}Perfeito, nossa loja tem um showroom incrível para você testar!\n\n"
-                "Para eu já separar as melhores opções para quando você chegar: qual **medida** você precisa "
-                "(solteiro, casal, queen ou king) e você busca algo mais **firme para a coluna** ou mais **macio com molas ensacadas**?"
+                f"Opa{f', {lead_name}' if lead_name else ''}! Tudo bom? Seja muito bem-vindo(a) à Companhia dos Sonhos! 😊 "
+                "Show de bola, nossa loja aqui na *Av. Tavares Bastos, 1246F (Marambaia)* tem um showroom incrível para você testar!\n\n"
+                "Para eu já separar as melhores opções para quando você chegar: qual *medida* você precisa "
+                "(solteiro, casal, queen ou king) e você busca algo mais *firme para a coluna* ou mais *macio com molas ensacadas*?"
             )
 
         if is_returning:
@@ -623,51 +614,50 @@ class DeterministicSalesChatModel(BaseChatModel):
             )
 
         if has_ad_context:
-            topic_str = f" sobre **{ad_topic}**" if ad_topic else ""
             if "segmento: `psychology`" in sys_text:
                 return (
-                    f"Olá, tudo bem? Seja muito bem-vindo(a) à Vizzu Psicologia! 😊 "
-                    f"Vi que você veio pelo nosso anúncio{topic_str}. Vai ser um enorme prazer te atender!\n\n"
-                    "Para eu te direcionar ao especialista ideal: o atendimento seria para **você (adulto)** "
-                    "ou para **criança/adolescente (qual a idade)**? E você busca **psicoterapia** ou **avaliação neuropsicológica**?"
+                    f"Olá{f', {lead_name}' if lead_name else ''}, tudo bem? Seja muito bem-vindo(a) à Vizzu Psicologia! 😊 "
+                    "Vai ser um enorme prazer te atender!\n\n"
+                    "Para eu te direcionar ao especialista ideal: o atendimento seria para *você (adulto)* "
+                    "ou para *criança/adolescente (qual a idade)*? E você busca *psicoterapia* ou *avaliação neuropsicológica*?"
                 )
             if "segmento: `pools`" in sys_text:
                 return (
-                    f"Olá, tudo bem? Seja muito bem-vindo(a) à Splash Piscinas! 🏊‍♂️ "
-                    f"Vi que você veio pelo nosso anúncio{topic_str}. Vai ser um enorme prazer te atender!\n\n"
-                    "Para eu preparar as melhores opções: de qual **cidade** você fala e qual é o **espaço aproximado** disponível no seu terreno?"
+                    f"Opa{f', {lead_name}' if lead_name else ''}, tudo bom? Seja muito bem-vindo(a) à Splash Piscinas! 🏊‍♂️ "
+                    "Show de bola, vai ser um enorme prazer te atender!\n\n"
+                    "Para eu preparar as melhores opções: de qual *cidade* você fala e qual é o *espaço aproximado* disponível no seu terreno?"
                 )
             return (
-                f"Olá, tudo bem? Seja muito bem-vindo(a) à Companhia dos Sonhos! 😊 "
-                f"Vi que você veio pelo nosso anúncio{topic_str}. Vai ser um enorme prazer te atender!\n\n"
-                "Para eu separar as melhores opções para você: qual **medida** você procura (solteiro, casal, queen ou king) "
-                "e você prefere um colchão mais **firme para a coluna** ou mais **macio com molas ensacadas**?"
+                f"Opa{f', {lead_name}' if lead_name else ''}! Tudo bom? Seja muito bem-vindo(a) à Companhia dos Sonhos! 😊 "
+                "Show de bola, temos vários modelos maravilhosos aqui na nossa loja da *Tavares Bastos (Marambaia)*!\n\n"
+                "Para eu separar as melhores opções para você: qual *medida* você procura (solteiro, casal, queen ou king) "
+                "e você prefere um colchão mais *firme para a coluna* ou mais *macio com molas ensacadas*?"
             )
 
         if "segmento: `psychology`" in sys_text:
             return (
                 "Olá! Seja muito bem-vindo(a) à Vizzu Psicologia. 😊\n\n"
-                "Para eu te direcionar da melhor forma: você busca atendimento para **adulto ou infantil (criança)**? "
-                "E seria para **psicoterapia regular** ou **avaliação neuropsicológica**?"
+                "Para eu te direcionar da melhor forma: você busca atendimento para *adulto ou infantil (criança)*? "
+                "E seria para *psicoterapia regular* ou *avaliação neuropsicológica*?"
             )
         if "segmento: `pools`" in sys_text:
             return (
                 "Olá! Tudo bem? Seja bem-vindo(a) à Splash Piscinas! 🏊‍♂️\n\n"
-                "Para eu preparar seu orçamento: de qual **cidade** você fala e qual é o **espaço aproximado** "
+                "Para eu preparar seu orçamento: de qual *cidade* você fala e qual é o *espaço aproximado* "
                 "disponível no terreno? Se puder enviar uma foto da área, também ajuda bastante!"
             )
         if "segmento: `generic`" in sys_text:
             name_match = re.search(r"empresa \*\*(.+?)\*\*", sys_text)
             company = name_match.group(1) if name_match else "nossa empresa"
             return (
-                f"Olá! Tudo bem? Seja muito bem-vindo(a) à **{company}**! 😊\n\n"
-                "Me conta um pouco sobre o seu negócio: qual é o seu **segmento** e qual é o principal "
-                "**desafio comercial** hoje (gerar mais clientes, atender mais rápido no WhatsApp ou organizar o funil)?"
+                f"Olá! Tudo bem? Seja muito bem-vindo(a) à *{company}*! 😊\n\n"
+                "Me conta um pouco sobre o seu negócio: qual é o seu *segmento* e qual é o principal "
+                "*desafio comercial* hoje (gerar mais clientes, atender mais rápido no WhatsApp ou organizar o funil)?"
             )
         return (
             "Olá, boa tarde! Seja muito bem-vindo(a)! 😊\n\n"
-            "Para eu te indicar o colchão ideal: qual **tamanho** você procura (solteiro, casal, queen ou king) "
-            "e você prefere um modelo mais **firme** para a coluna ou com **molas ensacadas** e pillow top?"
+            "Para eu te indicar o colchão ideal: qual *tamanho* você procura (solteiro, casal, queen ou king) "
+            "e você prefere um modelo mais *firme* para a coluna ou com *molas ensacadas* e pillow top?"
         )
 
     def _synthesize_from_tools(
@@ -690,7 +680,7 @@ class DeterministicSalesChatModel(BaseChatModel):
             if p.get("tool") == "trigger_human_handoff" and isinstance(p.get("data"), dict):
                 msg = p["data"].get("customer_message")
                 if msg:
-                    return AIMessage(content=str(msg))
+                    return AIMessage(content=sanitize_whatsapp_formatting(str(msg)))
 
         # Se alguma ferramenta exige humano (ex.: item sem preço ou fora da área), aciona handoff
         needs_human = next((p for p in payloads if p.get("requires_human")), None)
@@ -731,21 +721,22 @@ class DeterministicSalesChatModel(BaseChatModel):
             or "vi no anuncio" in norm
             or "vi a propaganda" in norm
         )
-        ad_headline_match = re.search(r"ad_headline=([^,\n.]+)", sys_text)
-        ad_topic = ad_headline_match.group(1).strip() if ad_headline_match else None
-        if ad_topic:
-            ad_topic = re.sub(r"(?:a partir de\s*)?R\$\s*[\d.,]+", "", ad_topic, flags=re.IGNORECASE).strip(" .,-–:")
 
         is_returning = "returning_contact=sim" in sys_text or (
             "(recorrente)" in sys_text and "returning_contact=nao" not in sys_text
         )
 
         if has_ad_context:
-            topic_str = f" sobre **{ad_topic}**" if ad_topic else ""
-            greeting = (
-                f"Olá{f', {lead_name}' if lead_name else ''}, tudo bem? Seja muito bem-vindo(a)! 😊 "
-                f"Vi que você veio pelo nosso anúncio{topic_str} e vai ser um enorme prazer te atender!"
-            )
+            if "segmento: `mattress`" in sys_text:
+                greeting = (
+                    f"Opa{f', {lead_name}' if lead_name else ''}! Tudo bom? Seja muito bem-vindo(a) à Companhia dos Sonhos! 😊 "
+                    "Show de bola, temos vários modelos maravilhosos aqui na nossa loja da *Tavares Bastos (Marambaia)*!"
+                )
+            else:
+                greeting = (
+                    f"Opa{f', {lead_name}' if lead_name else ''}! Tudo bom? Seja muito bem-vindo(a)! 😊 "
+                    "Show de bola, vai ser um enorme prazer te atender!"
+                )
         elif is_returning and lead_name:
             greeting = f"Oi, {lead_name}! Que bom falar com você de novo! 😊"
         else:
@@ -766,33 +757,30 @@ class DeterministicSalesChatModel(BaseChatModel):
                 )
                 if results and is_multi_highlight and len(results) >= 2:
                     presented_featured_highlights = True
+                    parts.append("Temos opções incríveis aqui na loja! Dá uma olhadinha nos nossos principais destaques:")
                     highlights: list[str] = []
                     for item in results[:3]:
                         i_name = item.get("name", "Produto")
                         i_id = item.get("item_id", "")
+                        i_desc = item.get("description") or "Conforto e alta durabilidade para o seu descanso."
                         i_attrs = item.get("attributes") or {}
                         i_medidas = i_attrs.get("medidas")
-                        i_firmeza = i_attrs.get("firmeza")
-                        i_details = ", ".join(
-                            filter(None, [i_medidas, f"firmeza {i_firmeza}" if i_firmeza else None])
-                        )
-                        line = f"• **{i_name}** (`{i_id}`)"
-                        if i_details:
-                            line += f" ({i_details})"
+                        header_line = f"✅ *{i_name}* (`{i_id}`)"
+                        if i_medidas:
+                            header_line += f" ({i_medidas})"
+                        card_lines = [header_line, i_desc]
                         if item.get("price_available"):
                             p_fmt = item.get("price_formatted")
                             inst_fmt = item.get("installments_formatted")
                             cash_fmt = item.get("cash_price_formatted")
-                            line += f" — por **{p_fmt}**"
+                            price_line = f"💰 *{p_fmt}*"
                             if inst_fmt:
-                                line += f" (em até **{inst_fmt}**)"
+                                price_line += f" em até *{inst_fmt}*"
                             if cash_fmt:
-                                line += f" ou **{cash_fmt}** à vista"
-                        highlights.append(line)
-                    parts.append(
-                        "Separei algumas das nossas **opções mais procuradas do catálogo** para você conhecer:\n"
-                        + "\n".join(highlights)
-                    )
+                                price_line += f" (ou *{cash_fmt}* à vista)"
+                            card_lines.append(price_line)
+                        highlights.append("\n".join(card_lines))
+                    parts.append("\n\n".join(highlights))
                 elif results:
                     top = results[0]
                     name = top.get("name", "Produto")
@@ -801,18 +789,18 @@ class DeterministicSalesChatModel(BaseChatModel):
                     medidas = attrs.get("medidas")
                     firmeza = attrs.get("firmeza")
                     details = ", ".join(filter(None, [medidas, f"firmeza {firmeza}" if firmeza else None]))
-                    header = f"Temos o **{name}** (`{item_id}`)"
+                    header = f"Temos o *{name}* (`{item_id}`)"
                     if details:
                         header += f" ({details})"
                     if top.get("price_available"):
                         price_fmt = top.get("price_formatted")
                         inst_fmt = top.get("installments_formatted")
                         cash_fmt = top.get("cash_price_formatted")
-                        price_line = f"por **{price_fmt}**"
+                        price_line = f"por *{price_fmt}*"
                         if inst_fmt:
-                            price_line += f" (em até **{inst_fmt}**)"
+                            price_line += f" (em até *{inst_fmt}*)"
                         if cash_fmt:
-                            price_line += f" ou **{cash_fmt}** à vista"
+                            price_line += f" ou *{cash_fmt}* à vista"
                         parts.append(f"{header} {price_line}.")
                         if top.get("price_note"):
                             parts.append(f"📌 *Observação:* {top['price_note']}")
@@ -828,25 +816,33 @@ class DeterministicSalesChatModel(BaseChatModel):
                 price_fmt = data.get("price_formatted")
                 inst_fmt = data.get("installments_formatted")
                 cash_fmt = data.get("cash_price_formatted")
-                line = f"O valor do **{label}** é **{price_fmt}**"
+                line = f"O valor do *{label}* é *{price_fmt}*"
                 if inst_fmt:
                     line += f" ({inst_fmt})"
                 if cash_fmt:
-                    line += f" ou **{cash_fmt}** à vista"
+                    line += f" ou *{cash_fmt}* à vista"
                 if not data.get("in_stock", True):
                     line += " *(atualmente sem estoque para pronta-entrega)*"
                 parts.append(f"{line}.")
 
             elif tool_name == "get_delivery_info" and p.get("status") == "ok":
                 city = data.get("city", "sua cidade")
+                neighborhood = data.get("neighborhood")
                 fee_fmt = data.get("fee_formatted", "")
                 lead_fmt = data.get("lead_time_formatted", "")
                 notes = data.get("notes")
-                deliv_line = (
-                    f"🚚 **Entrega em {city}:** frete **{fee_fmt}**, com prazo de **{lead_fmt}**."
-                )
-                if notes:
-                    deliv_line += f" ({notes})"
+                if neighborhood and "segmento: `mattress`" in sys_text:
+                    deliv_line = (
+                        f"🚚 Entregamos no *{neighborhood}* sim, com frete *{fee_fmt}* e entrega rápida de *{lead_fmt}*! "
+                        "E como a nossa loja fica aqui na *Av. Tavares Bastos, 1246F na Marambaia*, pertinho de você, "
+                        "você também pode dar uma passada aqui para deitar nele e testar o conforto pessoalmente!"
+                    )
+                else:
+                    deliv_line = (
+                        f"🚚 *Entrega em {city}:* frete *{fee_fmt}*, com prazo de *{lead_fmt}*."
+                    )
+                    if notes:
+                        deliv_line += f" ({notes})"
                 parts.append(deliv_line)
 
             elif tool_name == "get_business_info" and p.get("status") == "ok":
@@ -860,22 +856,22 @@ class DeterministicSalesChatModel(BaseChatModel):
                 if len(suggestions) >= 2:
                     s1, s2 = suggestions[0]["label"], suggestions[1]["label"]
                     parts.append(
-                        f"📅 Para **{service_name}**, tenho estas 2 opções de horário disponíveis:\n"
-                        f"1️⃣ **{s1}**\n"
-                        f"2️⃣ **{s2}**\n"
+                        f"📅 Para *{service_name}*, tenho estas 2 opções de horário disponíveis:\n"
+                        f"1️⃣ *{s1}*\n"
+                        f"2️⃣ *{s2}*\n"
                         f"Qual desses horários fica melhor para você?"
                     )
                 elif len(suggestions) == 1:
                     s1 = suggestions[0]["label"]
                     parts.append(
-                        f"📅 Para **{service_name}**, temos disponível **{s1}**. Posso confirmar para você?"
+                        f"📅 Para *{service_name}*, temos disponível *{s1}*. Posso confirmar para você?"
                     )
 
             elif tool_name == "create_booking" and p.get("status") == "ok":
                 service_name = data.get("service", "Atendimento")
                 label = data.get("label", "")
                 parts.append(
-                    f"✅ Agendamento confirmado para **{service_name}** em **{label}**! Te esperamos lá."
+                    f"✅ Agendamento confirmado para *{service_name}* em *{label}*! Te esperamos lá."
                 )
 
         if len(parts) == 1:
@@ -883,22 +879,22 @@ class DeterministicSalesChatModel(BaseChatModel):
         elif presented_featured_highlights:
             if "segmento: `psychology`" in sys_text:
                 parts.append(
-                    "Para eu te indicar a modalidade e o profissional ideal: o atendimento seria para **adulto ou criança**, "
-                    "e você busca **psicoterapia** ou **avaliação neuropsicológica**?"
+                    "Para eu te indicar a modalidade e o profissional ideal: o atendimento seria para *adulto ou criança*, "
+                    "e você busca *psicoterapia* ou *avaliação neuropsicológica*?"
                 )
             elif "segmento: `pools`" in sys_text:
                 parts.append(
-                    "Para eu te indicar o projeto ideal: de qual **cidade** você fala e qual é o **espaço aproximado** "
+                    "Para eu te indicar o projeto ideal: de qual *cidade* você fala e qual é o *espaço aproximado* "
                     "disponível no seu terreno?"
                 )
             elif "segmento: `generic`" in sys_text:
                 parts.append(
-                    "Para eu te indicar o plano ideal: qual é o seu **segmento** e o seu principal objetivo comercial hoje?"
+                    "Para eu te indicar o plano ideal: qual é o seu *segmento* e o seu principal objetivo comercial hoje?"
                 )
             else:
                 parts.append(
-                    "Para eu te indicar o modelo perfeito para o seu descanso: qual **medida** você precisa "
-                    "(solteiro, casal, queen ou king) e qual a sua preferência de **conforto** (mais firme para a coluna ou mais macio com molas ensacadas)?"
+                    "Para eu te indicar o modelo perfeito para o seu descanso: qual *medida* você precisa "
+                    "(solteiro, casal, queen ou king) e qual a sua preferência de *conforto* (mais firme para a coluna ou mais macio com molas ensacadas)?"
                 )
         elif not any(p.get("tool") in ("check_available_slots", "create_booking") for p in payloads):
             if "segmento: `generic`" in sys_text:
@@ -906,7 +902,7 @@ class DeterministicSalesChatModel(BaseChatModel):
             else:
                 parts.append("Gostaria de agendar uma visita à nossa loja para experimentar pessoalmente ou prefere já garantir o seu?")
 
-        return AIMessage(content="\n\n".join(parts))
+        return AIMessage(content=sanitize_whatsapp_formatting("\n\n".join(parts)))
 
 
 def create_gemini_chat_model(settings: Settings, model_name: str | None = None) -> BaseChatModel:
@@ -1132,13 +1128,22 @@ class AgentNodes:
         new_messages: list[BaseMessage] = []
 
         effective_llm = self._llm
-        if isinstance(effective_llm, DeterministicSalesChatModel) and tenant.tenant.llm_model:
-            effective_llm = effective_llm.model_copy(update={"model_name": tenant.tenant.llm_model})
-        elif hasattr(effective_llm, "model") and tenant.tenant.llm_model:
-            try:
-                effective_llm = effective_llm.model_copy(update={"model": tenant.tenant.llm_model})
-            except Exception:  # noqa: BLE001
-                pass
+        chosen_model = (tenant.tenant.llm_model or "").strip()
+        if chosen_model and chosen_model != "default":
+            if isinstance(effective_llm, DeterministicSalesChatModel):
+                effective_llm = effective_llm.model_copy(update={"model_name": chosen_model})
+            elif hasattr(effective_llm, "model"):
+                try:
+                    effective_llm = effective_llm.model_copy(update={"model": chosen_model})
+                except Exception:  # noqa: BLE001
+                    pass
+        active_model_name = (
+            getattr(effective_llm, "model_name", None)
+            or getattr(effective_llm, "model", None)
+            or chosen_model
+            or "gemini-3.8-flash"
+        )
+        lead.attributes["llm_model"] = str(active_model_name)
 
         model_with_tools = effective_llm.bind_tools(bound_tools)
         iterations = 0
@@ -1156,7 +1161,7 @@ class AgentNodes:
 
                 tool_calls = getattr(ai_response, "tool_calls", None) or []
                 if not tool_calls:
-                    final_ai_text = _extract_ai_text(ai_response.content)
+                    final_ai_text = sanitize_whatsapp_formatting(_extract_ai_text(ai_response.content))
                     break
 
                 for tc in tool_calls:
@@ -1346,7 +1351,7 @@ class AgentNodes:
         if state.get("silenced") or not (state.get("reply_text") or "").strip():
             return {"outgoing_message": None}
 
-        reply_text = str(state["reply_text"]).strip()
+        reply_text = sanitize_whatsapp_formatting(str(state["reply_text"]).strip())
         turn_id = state.get("turn_id")
         batch: MessageBatch | None = state.get("batch")
         lead = state["lead"]

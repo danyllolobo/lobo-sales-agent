@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.agent.state import AgentIntent, ConversationStage
 from src.core.schemas import Segment
+from src.tools.catalog import resolve_metropolitan_neighborhood
 from src.tools.handoff import HandoffReason
 from src.tools.results import ToolResult, normalize_text
 
@@ -267,11 +268,17 @@ def extract_lead_attributes(text: str, segment: Segment = Segment.GENERIC) -> di
     norm = f" {normalize_text(unquoted)} "
     attrs: dict[str, str] = {}
 
-    # Cidades
+    # Cidades e Bairros da Região Metropolitana de Belém
     for token, canonical_city in _CITY_MAP.items():
         if f" {token} " in norm:
             attrs["cidade"] = canonical_city
             break
+
+    nb_match = resolve_metropolitan_neighborhood(unquoted)
+    if nb_match is not None:
+        neighborhood_label, parent_city = nb_match
+        attrs["bairro"] = neighborhood_label
+        attrs.setdefault("cidade", parent_city)
 
     # Tamanho / tecnologia de colchão
     for size, aliases in (
@@ -418,7 +425,7 @@ class JEVGuard:
         # 5. Roteamento de estágio comercial
         has_booking = any(k in norm for k in _BOOKING_KEYWORDS)
         has_catalog = any(f" {k} " in norm or k in norm for k in _CATALOG_KEYWORDS)
-        has_delivery = any(k in norm for k in _DELIVERY_KEYWORDS)
+        has_delivery = any(k in norm for k in _DELIVERY_KEYWORDS) or bool(attrs.get("bairro"))
         has_biz_info = any(k in norm for k in _BUSINESS_INFO_KEYWORDS)
 
         if has_booking and not has_catalog:

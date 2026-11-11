@@ -96,6 +96,12 @@ class SendTestIn(BaseModel):
         return _phone(v)
 
 
+class WebhookConfigUpdate(BaseModel):
+    whatsapp_provider: Literal["waha", "astracalls"] | None = None
+    whatsapp_session_id: str | None = Field(default=None, max_length=120)
+    webhook_secret: str | None = Field(default=None, max_length=256)
+
+
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
@@ -132,6 +138,7 @@ def _tenant_summary(t: TenantData) -> dict[str, Any]:
         "demo_data": t.demo_data,
         "whatsapp_provider": t.tenant.whatsapp_provider.value,
         "whatsapp_session_id": t.tenant.whatsapp_session_id,
+        "webhook_secret": t.tenant.webhook_secret,
         "crm_provider": t.tenant.crm_provider.value,
         "timezone": t.tenant.timezone,
         "debounce_silence_seconds": t.tenant.debounce_silence_seconds,
@@ -422,6 +429,29 @@ async def webhooks(request: Request) -> dict[str, Any]:
             }
             for t in st.tenants.all()
         ],
+    }
+
+
+@router.put("/webhooks/{tenant_id}")
+async def webhooks_update(request: Request, tenant_id: TenantId, body: WebhookConfigUpdate) -> dict[str, Any]:
+    st = _state(request)
+    existing = _tenant_or_404(request, tenant_id)
+    payload = existing.model_dump(mode="json")
+    t_dict = payload.setdefault("tenant", {})
+    if body.whatsapp_provider is not None:
+        t_dict["whatsapp_provider"] = body.whatsapp_provider
+    if "whatsapp_session_id" in body.model_fields_set:
+        t_dict["whatsapp_session_id"] = (body.whatsapp_session_id or "").strip() or None
+    if "webhook_secret" in body.model_fields_set:
+        t_dict["webhook_secret"] = (body.webhook_secret or "").strip() or None
+    try:
+        validated = TenantData.model_validate(payload)
+    except ValidationError as exc:
+        return _validation_response(exc)  # type: ignore[return-value]
+    saved = st.tenants.save(validated)
+    return {
+        **_tenant_summary(saved),
+        "paths": {p: f"/webhook/{saved.tenant_id}/{p}" for p in ("waha", "astracalls")},
     }
 
 

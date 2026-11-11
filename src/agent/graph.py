@@ -69,6 +69,7 @@ from src.tools.handoff import (
     HandoffReason,
     HandoffService,
 )
+from src.tools.results import ToolResult, normalize_text
 from src.tools.tenant_data import TenantData, TenantDataStore
 
 logger = logging.getLogger("lobo.agent.graph")
@@ -283,6 +284,60 @@ def _extract_turn_tool_calls(messages: list[BaseMessage]) -> list[dict[str, Any]
     return calls
 
 
+_GRATITUDE_REACTION_TOKENS: tuple[str, ...] = (
+    "obrigado",
+    "obrigada",
+    "muito obrigado",
+    "muito obrigada",
+    "valeu",
+    "agradeco",
+    "grato",
+    "grata",
+)
+_PRAISE_REACTION_TOKENS: tuple[str, ...] = (
+    "show",
+    "perfeito",
+    "maravilha",
+    "excelente",
+    "amei",
+    "top demais",
+    "sensacional",
+)
+_CONFIRMATION_REACTION_TOKENS: tuple[str, ...] = (
+    "combinado",
+    "fechado",
+    "confirmo",
+    "confirmado",
+    "pode marcar",
+    "pode agendar",
+)
+
+
+def pick_reaction_emoji(
+    user_text: str,
+    *,
+    executed_tools: list[ToolResult] | None = None,
+) -> str | None:
+    """Seleciona um emoji de reação com parcimônia (apenas em confirmações, elogios ou agradecimentos).
+
+    Nunca reage a todas as mensagens: perguntas normais de preço, frete ou catálogo retornam `None`.
+    """
+    if executed_tools and any(r.ok and r.tool == "create_booking" for r in executed_tools):
+        return "👍"
+
+    norm = f" {normalize_text(user_text or '')} "
+    if not norm.strip():
+        return None
+
+    if any(f" {token} " in norm for token in _GRATITUDE_REACTION_TOKENS):
+        return "🙏"
+    if any(f" {token} " in norm for token in _PRAISE_REACTION_TOKENS):
+        return "❤️"
+    if any(f" {token} " in norm for token in _CONFIRMATION_REACTION_TOKENS):
+        return "👍"
+    return None
+
+
 # --------------------------------------------------------------------------- #
 # Orquestrador de Turno (conecta Buffer -> Transcrição -> LangGraph -> Gateway)
 # --------------------------------------------------------------------------- #
@@ -391,7 +446,11 @@ class SalesAgentRunner:
             await self._conv_store.save(updated_lead, updated_messages)
 
             outgoing: OutgoingMessage | None = final_state.get("outgoing_message")
+            executed_tools: list[ToolResult] = list(final_state.get("executed_tools") or [])
             if outgoing is not None and not final_state.get("silenced"):
+                reaction_emoji = pick_reaction_emoji(batch.combined_text, executed_tools=executed_tools)
+                if reaction_emoji and gateway is not None:
+                    await self._safe_react(gateway, batch, reaction_emoji)
                 await self._dispatch_outgoing(gateway, outgoing)
 
             latency_ms = (time.perf_counter() - t0) * 1000
@@ -483,6 +542,15 @@ class SalesAgentRunner:
             await gateway.set_typing(batch.session_id, target, True)
         except Exception:  # noqa: BLE001
             logger.debug("Falha não-crítica ao enviar status composing para %s", mask_phone(batch.contact_phone))
+
+    async def _safe_react(self, gateway: WhatsAppGateway, batch: MessageBatch, emoji: str) -> None:
+        try:
+            target = batch.last_message.chat_id or batch.contact_phone
+            msg_id = batch.last_message.message_id
+            if msg_id:
+                await gateway.react(batch.session_id, target, msg_id, emoji)
+        except Exception:  # noqa: BLE001
+            logger.debug("Falha não-crítica ao enviar reação (%s) para %s", emoji, mask_phone(batch.contact_phone))
 
     async def _safe_mark_seen_and_typing(self, gateway: WhatsAppGateway, batch: MessageBatch) -> None:
         """Fluxo humanizado pré-turno: 1) Blue ticks (mark_seen) -> 2) Pausa 500-1000ms -> 3) Digitando..."""
@@ -589,6 +657,7 @@ __all__ = [
     "LeadConversationStore",
     "SalesAgentRunner",
     "build_sales_graph",
+    "pick_reaction_emoji",
     "route_after_commercial",
     "route_after_triage",
     "split_human_chunks",

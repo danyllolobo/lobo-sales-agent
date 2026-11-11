@@ -292,6 +292,14 @@ class AstraCallsGateway(WhatsAppGateway):
             log_contact=to,
         )
 
+    async def react(self, session_id: str, chat_id: str, message_id: str, emoji: str) -> None:
+        await self._request(
+            "POST",
+            self._session_path(session_id, "messages/reaction"),
+            json={"to": self._to(chat_id), "messageId": message_id, "emoji": emoji},
+            log_contact=chat_id,
+        )
+
     async def send_message(self, message: OutgoingMessage) -> SendResult:
         to = self.destination(message)
         body: dict[str, Any] = {"to": self._to(to)}

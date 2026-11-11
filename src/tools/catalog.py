@@ -44,6 +44,69 @@ _UFS = frozenset(
     "ac al ap am ba ce df es go ma mt ms mg pa pb pr pe pi rj rn rs ro rr sc sp se to".split()
 )
 
+# Inteligência Geográfica Local: Bairros de Belém e Região Metropolitana (Ananindeua) -> (Nome Exibição, Cidade-Mãe)
+BELEM_METROPOLITAN_NEIGHBORHOODS: dict[str, tuple[str, str]] = {
+    "tapana": ("Tapanã", "Belém"),
+    "marambaia": ("Marambaia", "Belém"),
+    "tavares bastos": ("Marambaia", "Belém"),
+    "umarizal": ("Umarizal", "Belém"),
+    "icoaraci": ("Icoaraci", "Belém"),
+    "marco": ("Marco", "Belém"),
+    "pedreira": ("Pedreira", "Belém"),
+    "nazare": ("Nazaré", "Belém"),
+    "cabanagem": ("Cabanagem", "Belém"),
+    "bengui": ("Bengui", "Belém"),
+    "mangueirao": ("Mangueirão", "Belém"),
+    "parque verde": ("Parque Verde", "Belém"),
+    "augusto montenegro": ("Augusto Montenegro", "Belém"),
+    "guama": ("Guamá", "Belém"),
+    "jurunas": ("Jurunas", "Belém"),
+    "cremacao": ("Cremação", "Belém"),
+    "batista campos": ("Batista Campos", "Belém"),
+    "reduto": ("Reduto", "Belém"),
+    "sao bras": ("São Brás", "Belém"),
+    "souza": ("Souza", "Belém"),
+    "castanheira": ("Castanheira", "Belém"),
+    "sacramenta": ("Sacramenta", "Belém"),
+    "telegrafo": ("Telégrafo", "Belém"),
+    "terra firme": ("Terra Firme", "Belém"),
+    "condor": ("Condor", "Belém"),
+    "canudos": ("Canudos", "Belém"),
+    "fatima": ("Fátima", "Belém"),
+    "campina": ("Campina", "Belém"),
+    "cidade velha": ("Cidade Velha", "Belém"),
+    "mosqueiro": ("Mosqueiro", "Belém"),
+    "outeiro": ("Outeiro", "Belém"),
+    "tenone": ("Tenoné", "Belém"),
+    "pratinha": ("Pratinha", "Belém"),
+    "parque guajara": ("Parque Guajará", "Belém"),
+    "cidade nova": ("Cidade Nova", "Ananindeua"),
+    "coqueiro": ("Coqueiro", "Ananindeua"),
+    "aguas lindas": ("Águas Lindas", "Ananindeua"),
+    "aguas brancas": ("Águas Brancas", "Ananindeua"),
+    "jaderlandia": ("Jaderlândia", "Ananindeua"),
+    "atalaia": ("Atalaia", "Ananindeua"),
+    "icui": ("Icuí-Guajará", "Ananindeua"),
+    "icui guajara": ("Icuí-Guajará", "Ananindeua"),
+    "paar": ("Paar", "Ananindeua"),
+    "distrito industrial": ("Distrito Industrial", "Ananindeua"),
+    "40 horas": ("40 Horas", "Ananindeua"),
+    "quarenta horas": ("40 Horas", "Ananindeua"),
+    "curucamba": ("Curuçambá", "Ananindeua"),
+    "maguari": ("Maguari", "Ananindeua"),
+    "guanabara": ("Guanabara", "Ananindeua"),
+}
+
+
+def resolve_metropolitan_neighborhood(raw_text: str) -> tuple[str, str] | None:
+    """Identifica se `raw_text` contém um bairro de Belém ou Ananindeua, retornando `(Bairro, Cidade)`."""
+    norm = f" {normalize_text(raw_text)} "
+    # Ordena chaves mais longas primeiro para priorizar nomes compostos ("cidade nova", "parque verde")
+    for token in sorted(BELEM_METROPOLITAN_NEIGHBORHOODS, key=len, reverse=True):
+        if f" {token} " in norm:
+            return BELEM_METROPOLITAN_NEIGHBORHOODS[token]
+    return None
+
 PRICE_SHOW_INSTRUCTION = (
     "Use EXATAMENTE os valores formatados retornados (campos *_formatted). "
     "Não arredonde, não some, não ofereça descontos além do retornado."
@@ -262,11 +325,20 @@ class CatalogService:
     @tool_guard("get_delivery_info")
     async def get_delivery_info(self, tenant_id: str, city: str) -> ToolResult:
         tool = "get_delivery_info"
-        delivery = self._store.get(tenant_id).delivery
+        tenant_data = self._store.get(tenant_id)
+        delivery = tenant_data.delivery
         wanted = normalize_text(city)
-        # aceita "Belém", "belem pa", "Belém - PA", "Ananindeua/PA"
+        # aceita "Belém", "belem pa", "Belém - PA", "Ananindeua/PA" ou bairros da RMB ("Tapanã", "Umarizal", etc.)
         parts = wanted.split()
         wanted_city = " ".join(parts[:-1]) if len(parts) > 1 and parts[-1] in _UFS else wanted
+
+        matched_neighborhood: str | None = None
+        parent_city: str | None = None
+        nb_match = resolve_metropolitan_neighborhood(city)
+        if nb_match is not None:
+            matched_neighborhood, parent_city = nb_match
+            wanted_city = normalize_text(parent_city)
+
         for zone in delivery.zones:
             if any(normalize_text(c) in (wanted, wanted_city) for c in zone.cities):
                 unit = "dias úteis" if zone.business_days else "dias"
@@ -275,19 +347,26 @@ class CatalogService:
                     if zone.lead_time_days_min == zone.lead_time_days_max
                     else f"{zone.lead_time_days_min} a {zone.lead_time_days_max} {unit}"
                 )
+                payload: dict[str, Any] = {
+                    "city": matched_neighborhood or city.strip(),
+                    "delivers": True,
+                    "fee": zone.fee,
+                    "fee_formatted": "Grátis" if zone.fee == 0 else format_brl(zone.fee),
+                    "lead_time_days_min": zone.lead_time_days_min,
+                    "lead_time_days_max": zone.lead_time_days_max,
+                    "lead_time_formatted": lead,
+                    "notes": zone.notes,
+                }
+                if matched_neighborhood and parent_city:
+                    payload["neighborhood"] = matched_neighborhood
+                    payload["parent_city"] = parent_city
+                    payload["store_reference"] = (
+                        "Nossa loja física fica na Av. Tavares Bastos, 1246F (Marambaia), pertinho de você!"
+                    )
                 return ToolResult.success(
                     tool,
                     tenant_id,
-                    {
-                        "city": city.strip(),
-                        "delivers": True,
-                        "fee": zone.fee,
-                        "fee_formatted": "Grátis" if zone.fee == 0 else format_brl(zone.fee),
-                        "lead_time_days_min": zone.lead_time_days_min,
-                        "lead_time_days_max": zone.lead_time_days_max,
-                        "lead_time_formatted": lead,
-                        "notes": zone.notes,
-                    },
+                    payload,
                     instruction="Informe a taxa e o prazo EXATAMENTE como retornados.",
                 )
         return ToolResult.needs_human(
@@ -375,6 +454,7 @@ class CatalogService:
             "item_id": item.item_id,
             "name": item.name,
             "category": item.category,
+            "description": item.description or None,
             "featured": item.featured,
             "attributes": item.attributes,
             "in_stock": item.in_stock,
@@ -392,11 +472,13 @@ class CatalogService:
 
 
 __all__ = [
+    "BELEM_METROPOLITAN_NEIGHBORHOODS",
     "BusinessInfoInput",
     "CatalogSearchInput",
     "CatalogService",
     "DeliveryQueryInput",
     "FEATURED_FALLBACK_INSTRUCTION",
     "PriceQueryInput",
+    "resolve_metropolitan_neighborhood",
     "tokenize",
 ]

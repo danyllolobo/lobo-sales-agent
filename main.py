@@ -230,7 +230,17 @@ def create_app(
             raise HTTPException(status_code=404, detail=exc.message) from exc
 
         body = await request.body()
-        if not gateway.verify_signature(body, request.headers):
+        tenant_secret = (tenant.tenant.webhook_secret or "").strip() or None
+        if tenant_secret:
+            if provider is Provider.WAHA:
+                sig_ok = gateway._hmac_matches(tenant_secret, body, request.headers.get("x-webhook-hmac"), "sha512")
+            else:
+                sig_ok = gateway._hmac_matches(
+                    tenant_secret, body, request.headers.get("x-webhook-signature"), "sha256", prefix="sha256="
+                )
+        else:
+            sig_ok = gateway.verify_signature(body, request.headers)
+        if not sig_ok:
             logger.warning("Assinatura de webhook inválida tenant=%s provider=%s", tenant_id, provider.value)
             raise HTTPException(status_code=401, detail="assinatura inválida")
         try:

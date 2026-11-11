@@ -280,6 +280,14 @@ class WahaGateway(WhatsAppGateway):
             body["messageIds"] = message_ids
         await self._request("POST", "/api/sendSeen", json=body, log_contact=to)
 
+    async def react(self, session_id: str, chat_id: str, message_id: str, emoji: str) -> None:
+        await self._request(
+            "POST",
+            "/api/sendReaction",
+            json={"session": session_id, "chatId": self.chat_id_for(chat_id), "messageId": message_id, "text": emoji},
+            log_contact=chat_id,
+        )
+
     async def send_message(self, message: OutgoingMessage) -> SendResult:
         to = self.destination(message)
         body: dict[str, Any] = {"session": message.session_id, "chatId": self.chat_id_for(to)}

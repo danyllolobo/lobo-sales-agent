@@ -159,6 +159,10 @@ class WhatsAppGateway(ABC):
     async def mark_seen(self, session_id: str, to: str, message_ids: list[str]) -> None:
         """Marca mensagens como lidas."""
 
+    async def react(self, session_id: str, chat_id: str, message_id: str, emoji: str) -> None:
+        """Reage a uma mensagem recebida com um emoji (ex.: '👍', '❤️', '🙏'). Best-effort."""
+        return None
+
     @abstractmethod
     async def download_media(self, message: IncomingMessage) -> bytes:
         """Baixa os bytes da mídia de uma mensagem recebida."""

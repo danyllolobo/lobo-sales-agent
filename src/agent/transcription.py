@@ -10,12 +10,11 @@ Cumpre o requisito 3 do MVP (`MASTER_KICKOFF_PROMPT.md` §1 e §2):
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import io
 import logging
 from collections.abc import Awaitable, Callable
-
-from langchain_core.messages import HumanMessage
 
 from src.config import Settings
 from src.core.exceptions import GatewayError, TranscriptionError
@@ -28,7 +27,7 @@ TranscribeFn = Callable[[bytes, str], Awaitable[str]]
 
 _TRANSCRIPTION_PROMPT = (
     "Transcreva fielmente este áudio em português brasileiro. "
-    "Retorne APENAS o texto falado pelo cliente, sem comentários adicionais."
+    "Retorne APENAS o texto falado pelo cliente, sem introduções ou aspas."
 )
 
 
@@ -208,26 +207,21 @@ class AudioTranscriber:
         )
 
     async def _transcribe_with_gemini(self, audio_bytes: bytes, mimetype: str) -> str:
-        from langchain_google_genai import ChatGoogleGenerativeAI
+        from google import genai
+        from google.genai import types
 
         assert self._settings.google_api_key is not None
         clean_mime = normalize_audio_mimetype(mimetype)
-        llm = ChatGoogleGenerativeAI(
+        client = genai.Client(api_key=self._settings.google_api_key.get_secret_value())
+        response = await asyncio.to_thread(
+            client.models.generate_content,
             model=self._settings.gemini_transcribe_model,
-            google_api_key=self._settings.google_api_key.get_secret_value(),
-            api_version="v1beta",
-            temperature=0.0,
+            contents=[
+                types.Part.from_bytes(data=audio_bytes, mime_type=clean_mime),
+                _TRANSCRIPTION_PROMPT,
+            ],
         )
-        b64 = base64.b64encode(audio_bytes).decode("ascii")
-        msg = HumanMessage(
-            content=[
-                {"type": "text", "text": _TRANSCRIPTION_PROMPT},
-                {"type": "media", "mime_type": clean_mime, "data": b64},
-            ]
-        )
-        resp = await llm.ainvoke([msg])
-        content = resp.content if isinstance(resp.content, str) else str(resp.content)
-        return content.strip()
+        return (getattr(response, "text", None) or "").strip().strip("\"'“”")
 
     async def _transcribe_with_whisper(self, audio_bytes: bytes, mimetype: str) -> str:
         from openai import AsyncOpenAI

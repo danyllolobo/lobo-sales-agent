@@ -7,7 +7,16 @@
   const THEME_KEY = "lobo_theme";
   const WEEKDAYS = [["mon", "Seg"], ["tue", "Ter"], ["wed", "Qua"], ["thu", "Qui"], ["fri", "Sex"], ["sat", "Sáb"], ["sun", "Dom"]];
   const SEGMENTS = ["generic", "mattress", "pools", "psychology"];
-  const LLM_MODELS = ["gemini-3.8-flash", "gemini-2.5-pro", "gemini-3-pro", "gemini-4-argon", "gpt-4o", "gpt-4o-mini"];
+  const LLM_MODELS = ["default", "gemini-3.8-flash", "gemini-2.5-pro", "gemini-3-pro", "gemini-4-argon", "gpt-4o", "gpt-4o-mini"];
+  const LLM_MODEL_OPTIONS = [
+    ["default", "Padrão do Sistema (Global)"],
+    ["gemini-3.8-flash", "gemini-3.8-flash (Ultra Rápido & Econômico)"],
+    ["gemini-2.5-pro", "gemini-2.5-pro (Raciocínio Avançado & Vendas de Alto Ticket)"],
+    ["gemini-3-pro", "gemini-3-pro (Negociação Complexa)"],
+    ["gemini-4-argon", "gemini-4-argon"],
+    ["gpt-4o", "gpt-4o (OpenAI)"],
+    ["gpt-4o-mini", "gpt-4o-mini (OpenAI)"],
+  ];
   const INTEGRATION_ICONS = { gemini: "✨", openai: "🎙️", waha: "🟢", astracalls: "📞", chatwoot: "💬", ghl: "🧠" };
 
   const S = {
@@ -699,6 +708,7 @@
   const inp = (path, type = "str", attrs = "") => `<input data-path="${esc(path)}" data-type="${type}" value="${esc(Array.isArray(val(path)) ? val(path).join(", ") : val(path) ?? "")}" ${attrs}>`;
   const chk = (path, label) => `<label class="check"><input type="checkbox" data-path="${esc(path)}" data-type="bool" ${val(path) ? "checked" : ""}> ${esc(label)}</label>`;
   const sel = (path, options, attrs = "") => `<select data-path="${esc(path)}" ${attrs}>${options.map((o) => `<option value="${esc(o)}" ${val(path) === o ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
+  const selPairs = (path, pairs, attrs = "") => `<select data-path="${esc(path)}" ${attrs}>${pairs.map(([v, lbl]) => `<option value="${esc(v)}" ${(val(path) || "gemini-3.8-flash") === v ? "selected" : ""}>${esc(lbl)}</option>`).join("")}</select>`;
   const field = (label, control, cls = "") => `<label class="field ${cls}"><span>${esc(label)}</span>${control}</label>`;
 
   function synonymsText() {
@@ -791,7 +801,8 @@
           ${field("Provedor WhatsApp", sel("tenant.whatsapp_provider", ["waha", "astracalls"]))}
           ${field("Sessão WhatsApp", inp("tenant.whatsapp_session_id", "str?", 'placeholder="ex.: Danyllo"'))}
           ${field("CRM", sel("tenant.crm_provider", ["chatwoot", "ghl", "none"], 'data-act="crm-provider"'))}
-          ${field("Modelo de IA (Flash vs. Pro)", sel("tenant.llm_model", LLM_MODELS), "span-2")}
+          ${field("Modelo de IA", selPairs("tenant.llm_model", LLM_MODEL_OPTIONS), "span-2")}
+          ${field("Chave HMAC / Secret do Webhook", inp("tenant.webhook_secret", "str?", 'placeholder="opcional (sobrescreve .env)"'), "span-2")}
           <label class="field span-2">
             <span>⏱️ Silêncio para fechar o lote (debounce): <strong id="tn-silence-val" class="mono">${esc(t.debounce_silence_seconds ?? S.overview?.debounce?.silence_seconds ?? 8)}s</strong></span>
             <input type="range" data-path="tenant.debounce_silence_seconds" data-type="num?" min="2" max="30" step="1" value="${esc(t.debounce_silence_seconds ?? S.overview?.debounce?.silence_seconds ?? 8)}">
@@ -1144,15 +1155,44 @@
     $("#wh-trigger-example").textContent = `${trigger} Olá`;
     $("#wh-ttl").textContent = S.sandbox?.config.session_ttl_minutes ?? 30;
     const urlCell = (path) => `<div class="row-between"><span class="url">${esc(origin + path)}</span><button class="btn btn-sm" data-copy="${esc(origin + path)}">📋 Copiar</button></div>`;
-    $("#wh-table").innerHTML = `<thead><tr><th>Cliente</th><th>Canal padrão</th><th>WAHA</th><th>AstraCalls</th></tr></thead><tbody>${
-      r.data.tenants.map((t) => `<tr>
+    $("#wh-table").innerHTML = `<thead><tr><th>Cliente</th><th>Canal &amp; Sessão</th><th>WAHA</th><th>AstraCalls</th><th>HMAC / Secret &amp; Ações</th></tr></thead><tbody>${
+      r.data.tenants.map((t) => `<tr data-wh-tenant="${esc(t.tenant_id)}">
         <td><strong>${esc(t.display_name)}</strong><div class="muted small mono">${esc(t.tenant_id)}</div></td>
-        <td><span class="chip">${esc(t.whatsapp_provider)}</span>${t.whatsapp_session_id ? `<div class="muted small">sessão: ${esc(t.whatsapp_session_id)}</div>` : ""}</td>
-        <td style="min-width:280px">${urlCell(t.paths.waha)}</td>
-        <td style="min-width:280px">${urlCell(t.paths.astracalls)}</td>
+        <td style="min-width:190px">
+          <select data-wh="provider" class="wh-input" style="margin-bottom:4px">
+            <option value="waha" ${t.whatsapp_provider === "waha" ? "selected" : ""}>waha</option>
+            <option value="astracalls" ${t.whatsapp_provider === "astracalls" ? "selected" : ""}>astracalls</option>
+          </select>
+          <input data-wh="session" value="${esc(t.whatsapp_session_id || "")}" placeholder="sessão (ex.: Danyllo)">
+        </td>
+        <td style="min-width:260px">${urlCell(t.paths.waha)}</td>
+        <td style="min-width:260px">${urlCell(t.paths.astracalls)}</td>
+        <td style="min-width:230px">
+          <div class="row-between" style="gap:6px">
+            <input data-wh="secret" type="password" value="${esc(t.webhook_secret || "")}" placeholder="HMAC Secret (opcional)">
+            <button class="btn btn-primary btn-sm" data-save-wh="${esc(t.tenant_id)}">💾 Salvar</button>
+          </div>
+        </td>
       </tr>`).join("")}</tbody>`;
   }
   $("#wh-table").addEventListener("click", async (ev) => {
+    const saveBtn = ev.target.closest("button[data-save-wh]");
+    if (saveBtn) {
+      const tenantId = saveBtn.dataset.saveWh;
+      const row = saveBtn.closest("tr[data-wh-tenant]");
+      if (!row) return;
+      const body = {
+        whatsapp_provider: row.querySelector('[data-wh="provider"]').value,
+        whatsapp_session_id: row.querySelector('[data-wh="session"]').value.trim() || null,
+        webhook_secret: row.querySelector('[data-wh="secret"]').value.trim() || null,
+      };
+      const r = await act(saveBtn, "Webhook do cliente salvo", () => api("PUT", `/api/admin/webhooks/${encodeURIComponent(tenantId)}`, body), { okMsg: tenantId });
+      if (r.ok) {
+        const idx = S.tenants.findIndex((t) => t.tenant_id === tenantId);
+        if (idx >= 0) S.tenants[idx] = { ...S.tenants[idx], ...r.data };
+      }
+      return;
+    }
     const btn = ev.target.closest("button[data-copy]");
     if (!btn) return;
     const text = btn.dataset.copy;
