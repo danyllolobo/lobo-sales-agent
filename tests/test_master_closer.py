@@ -257,8 +257,9 @@ async def test_ad_lead_greeting_has_zero_robotic_meta_language_and_uses_whatsapp
     assert "recebi sua mensagem da campanha" not in lowered
     assert "vi que você marcou" not in lowered
 
-    # Saudação natural + referência à loja da Tavares Bastos + cards estilo WhatsApp
-    assert "d lobo" in lowered
+    # Saudação natural (sem usar abreviação estranha "D Lobo" do WhatsApp, perguntando o nome) + referência à loja + cards
+    assert "d lobo" not in lowered
+    assert "como posso te chamar" in lowered
     assert "tavares bastos" in lowered
     assert "✅ *Colchão Molas Ensacadas Prime Casal*" in res.reply_text
     assert "💰 *R$ 2.899,00*" in res.reply_text
@@ -816,6 +817,133 @@ def test_security_audit_hardening_controls(tmp_path):
             headers={"Content-Type": "application/json"},
         )
         assert too_large_res.status_code == 413
+
+
+# =========================================================================== #
+# 9. Download de Áudio S3/MinIO (WAHA) & Conduta de Perguntar Nome Real
+# =========================================================================== #
+async def test_waha_s3_minio_audio_download_and_human_name_conduct(
+    store: JsonTenantDataStore,
+    fake_redis,
+):
+    from src.core.schemas import MediaAttachment, extract_spoken_name, validate_human_name
+
+    # 1. Filtro anti-apelido/emoji/abreviação do WhatsApp
+    assert validate_human_name("D Lobo") is None
+    assert validate_human_name("Calçadão Do Pastel🍟") is None
+    assert validate_human_name("Jamilly Karoline👽 Cliente") is None
+    assert validate_human_name("✌🏼Thyago Vieira 🍀") is None
+    assert validate_human_name("Deus E Fiel") is None
+    assert validate_human_name("Jessica🎀") is None
+    assert validate_human_name("Lobo Ads Marketing Digital") is None
+    assert validate_human_name("Carlos") == "Carlos"
+    assert validate_human_name("Mariana") == "Mariana"
+
+    # 2. Extração do nome quando o cliente responde na conversa
+    assert extract_spoken_name("Meu nome é Danyllo") == "Danyllo"
+    assert extract_spoken_name("Me chamo Fernanda") == "Fernanda"
+    assert extract_spoken_name("Danyllo, vocês têm o King?", asked_for_name=True) == "Danyllo"
+    assert extract_spoken_name("King", asked_for_name=True) is None
+
+    # 3. Download de áudio via URL pré-assinada do MinIO/S3 (sem enviar X-Api-Key para o S3)
+    s3_requests: list[tuple[str, str, dict[str, str]]] = []
+
+    def s3_waha_handler(request: httpx.Request) -> httpx.Response:
+        s3_requests.append((request.method, str(request.url), dict(request.headers)))
+        if "site-minio.hxseut.easypanel.host" in str(request.url):
+            # Garante que X-Api-Key do WAHA NÃO foi vazado nem enviado para o S3 pré-assinado
+            assert "x-api-key" not in {k.lower() for k in request.headers.keys()}
+            return httpx.Response(200, content=b"OggS_MINIO_AUDIO_BYTES")
+        if request.url.path.endswith("/messages"):
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "id": "false_229308354326776@lid_3ADBA",
+                        "hasMedia": True,
+                        "media": {
+                            "url": "https://site-minio.hxseut.easypanel.host/waha/LoboAds/3ADBA.oga?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=abc123",
+                            "mimetype": "audio/ogg; codecs=opus",
+                        },
+                    }
+                ],
+            )
+        return httpx.Response(404)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(s3_waha_handler))
+    try:
+        gw = WahaGateway("https://waha.lobo.test", "secret-waha-key", default_session="LoboAds", client=client)
+        msg_s3 = IncomingMessage(
+            message_id="false_229308354326776@lid_3ADBA",
+            tenant_id="companhia-dos-sonhos",
+            provider=Provider.WAHA,
+            session_id="LoboAds",
+            contact_phone="5591982054450",
+            chat_id="229308354326776@lid",
+            contact_name="D Lobo",
+            type=MessageType.AUDIO,
+            media=MediaAttachment(
+                url="https://site-minio.hxseut.easypanel.host/waha/LoboAds/3ADBA.oga?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=abc123",
+                mimetype="audio/ogg; codecs=opus",
+            ),
+        )
+        audio_bytes = await gw.download_media(msg_s3)
+        assert audio_bytes == b"OggS_MINIO_AUDIO_BYTES"
+    finally:
+        await client.aclose()
+
+    # 4. Fluxo completo: Turno 1 com pushName "D Lobo" pergunta o nome -> Turno 2 cliente diz "Me chamo Danyllo" e o agente salva!
+    runner = _build_runner(store, fake_redis)
+    turn1 = await runner.handle_batch(
+        MessageBatch(
+            tenant_id="companhia-dos-sonhos",
+            contact_phone="5591982054450",
+            session_id="LoboAds",
+            messages=[
+                IncomingMessage(
+                    message_id="MSG_NAME_1",
+                    tenant_id="companhia-dos-sonhos",
+                    provider=Provider.WAHA,
+                    session_id="LoboAds",
+                    contact_phone="5591982054450",
+                    contact_name="D Lobo",
+                    type=MessageType.TEXT,
+                    text="Opa, tudo bem?",
+                )
+            ],
+            first_received_at=FIXED_NOW,
+            flushed_at=FIXED_NOW,
+        )
+    )
+    assert turn1.lead.name is None
+    assert turn1.lead.attributes.get("whatsapp_push_name") == "D Lobo"
+    assert "d lobo" not in (turn1.reply_text or "").lower()
+    assert "como posso te chamar" in (turn1.reply_text or "").lower()
+
+    turn2 = await runner.handle_batch(
+        MessageBatch(
+            tenant_id="companhia-dos-sonhos",
+            contact_phone="5591982054450",
+            session_id="LoboAds",
+            messages=[
+                IncomingMessage(
+                    message_id="MSG_NAME_2",
+                    tenant_id="companhia-dos-sonhos",
+                    provider=Provider.WAHA,
+                    session_id="LoboAds",
+                    contact_phone="5591982054450",
+                    contact_name="D Lobo",
+                    type=MessageType.TEXT,
+                    text="Danyllo, vocês têm colchão King?",
+                )
+            ],
+            first_received_at=FIXED_NOW,
+            flushed_at=FIXED_NOW,
+        )
+    )
+    assert turn2.lead.name == "Danyllo"
+    assert turn2.lead.attributes.get("name_confirmed") == "sim"
+
 
 
 

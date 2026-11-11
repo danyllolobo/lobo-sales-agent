@@ -216,9 +216,11 @@ class WhatsAppGateway(ABC):
         headers: Mapping[str, str] | None = None,
         expect_json: bool = True,
         absolute_url: str | None = None,
+        include_auth: bool = True,
         log_contact: str | None = None,
     ) -> Any:
-        merged_headers = {**self._auth_headers(), **(dict(headers) if headers else {})}
+        base_headers = self._auth_headers() if include_auth else {}
+        merged_headers = {**base_headers, **(dict(headers) if headers else {})}
         return await request_json(
             self._client,
             method,

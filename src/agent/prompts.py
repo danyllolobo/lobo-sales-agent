@@ -33,7 +33,17 @@ PRINCÍPIO INVIOLÁVEL — IDENTIDADE 100% HUMANA E POSTURA SDR/CLOSER MASTER:
    - Ao responder sobre um item citado: vá direto ao elogio e benefício do item ("Esse modelo de molas ensacadas é um espetáculo! Quando um se mexe o outro nem sente na cama...").
 3. POSICIONAMENTO PROFISSIONAL: Você atua sempre como Consultor(a) Especialista de Atendimento e Vendas \
 da Loja ou Equipe de Acolhimento da Clínica.
-4. ESCALAÇÃO HUMANIZADA (SUBSTITUIÇÃO DO HANDOFF): Quando uma situação exigir intervenção (exceção financeira, \
+4. CONDUTA OBRIGATÓRIA DE IDENTIFICAÇÃO DO NOME DO CLIENTE (ANTI-APELIDO WHATSAPP):
+   - No WhatsApp, muitas pessoas usam abreviações (ex.: "D Lobo"), emojis, frases religiosas ou nomes comerciais no perfil. \
+Por isso, você NUNCA deve chamar o cliente por apelidos, siglas ou abreviações estranhas.
+   - Sempre que o nome do cliente estiver como `não informado` (não salvo no CRM nem confirmado na conversa), \
+você DEVE perguntar o nome da pessoa com simpatia e naturalidade ("Como posso te chamar?" ou "Qual é o seu nome?"):
+     * No início do atendimento: "Opa! Tudo bom? Seja muito bem-vindo(a) à [Empresa]! 😊 Como posso te chamar?" \
+(podendo emendar com a pergunta de descoberta, ex.: "Como posso te chamar e qual medida você está procurando?").
+     * Se o cliente já iniciar perguntando sobre um produto ou valor: responda primeiro ao que ele perguntou \
+e inclua de forma leve no fechamento: "A propósito, como posso te chamar?".
+   - Assim que o nome real do cliente estiver confirmado no contexto do turno, chame-o pelo primeiro nome com naturalidade e não pergunte novamente.
+5. ESCALAÇÃO HUMANIZADA (SUBSTITUIÇÃO DO HANDOFF): Quando uma situação exigir intervenção (exceção financeira, \
 desconto acima da tabela ou caso clínico complexo), NUNCA diga que vai transferir para um humano. \
 Escale para seu superior hierárquico mantendo a continuidade:
    - Em lojas (colchões/piscinas/serviços): "Essa condição exclusiva foge da minha alçada de consultor. \
@@ -272,7 +282,11 @@ def _summarize_conversation_memory(lead: LeadProfile, history: list[BaseMessage]
     if recent_human:
         lines.append(f"ultimas_mensagens_do_cliente=[{'; '.join(recent_human)}]")
     if lead.attributes:
-        known = ", ".join(f"{k}={v}" for k, v in sorted(lead.attributes.items()) if k != "llm_model")
+        known = ", ".join(
+            f"{k}={v}"
+            for k, v in sorted(lead.attributes.items())
+            if k not in ("llm_model", "whatsapp_push_name")
+        )
         if known:
             lines.append(f"preferencias_ja_identificadas_nao_repetir_pergunta=({known})")
     return " | ".join(lines)
@@ -299,7 +313,11 @@ def build_system_prompt(
         )
 
     lead_attrs = (
-        ", ".join(f"{k}={v}" for k, v in sorted(lead.attributes.items()))
+        ", ".join(
+            f"{k}={v}"
+            for k, v in sorted(lead.attributes.items())
+            if k not in ("whatsapp_push_name",)
+        )
         if lead.attributes
         else "nenhum atributo coletado ainda"
     )
@@ -322,6 +340,17 @@ def build_system_prompt(
         else ""
     )
 
+    name_directive = (
+        f"- Nome do lead: {lead.name}.\n"
+        if lead.name
+        else (
+            "- Nome do lead: não informado.\n"
+            "- CONDUTA DE NOME NESTE TURNO: Você ainda NÃO sabe o nome real do cliente (não está salvo no CRM "
+            "ou o WhatsApp enviou apenas apelido/abreviação/emoji). NÃO use apelidos e pergunte de forma simpática "
+            "'Como posso te chamar?' (ou 'Qual é o seu nome?') na sua mensagem!\n"
+        )
+    )
+
     return (
         f"Você é o consultor especialista oficial de atendimento e vendas da empresa **{tenant.tenant.display_name}** "
         f"(tenant_id: `{tenant.tenant_id}`, segmento: `{tenant.tenant.segment.value}`{niche_line}, modelo: `{tenant.tenant.llm_model}`).\n\n"
@@ -335,7 +364,7 @@ def build_system_prompt(
         f"- Data/hora atual no fuso do cliente ({tenant.tenant.timezone}): {now_local:%Y-%m-%d %H:%M} "
         f"(use datas no formato AAAA-MM-DD ao chamar `check_available_slots`).\n"
         f"- Serviços disponíveis para agendamento: {services_desc}.\n"
-        f"- Nome do lead: {lead.name or 'não informado'}.\n"
+        f"{name_directive}"
         f"- Status do lead: {lead.status.value} ({'recorrente' if is_returning else 'novo contato'}).\n"
         f"- Origem do lead: {origin_desc}.\n"
         f"- Dados já identificados do lead: {lead_attrs}.\n"

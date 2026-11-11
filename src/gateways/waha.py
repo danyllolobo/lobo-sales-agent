@@ -340,6 +340,33 @@ class WahaGateway(WhatsAppGateway):
             decoded.startswith("/api/") and ("/messages/" in decoded or "/files/" in decoded)
         )
 
+    @staticmethod
+    def _is_safe_storage_url(url: str) -> bool:
+        """Valida URLs pré-assinadas de Object Storage (MinIO / S3 do WAHA) bloqueando SSRF e Path Traversal."""
+        if not url or not isinstance(url, str):
+            return False
+        parts = urlsplit(url.strip())
+        if parts.scheme.lower() not in ("https", "http") or not parts.hostname:
+            return False
+        host = parts.hostname.lower()
+        if host in ("localhost", "127.0.0.1", "0.0.0.0", "::1", "169.254.169.254") or host.startswith(
+            ("127.", "169.254.")
+        ):
+            return False
+        decoded_path = unquote(parts.path or "")
+        if not decoded_path.startswith("/") or ".." in decoded_path or "\\" in decoded_path or "//" in decoded_path:
+            return False
+        if decoded_path.startswith("/api/"):
+            return False
+        query_lower = (parts.query or "").lower()
+        has_presigned_sig = any(
+            k in query_lower for k in ("x-amz-signature", "x-amz-algorithm", "x-amz-credential", "signature=", "token=")
+        )
+        has_media_path = decoded_path.startswith(("/waha/", "/files/", "/media/", "/storage/")) or decoded_path.lower().endswith(
+            (".oga", ".ogg", ".opus", ".mp3", ".m4a", ".wav", ".aac", ".webm", ".mp4", ".jpg", ".jpeg", ".png", ".webp", ".pdf")
+        )
+        return has_presigned_sig or has_media_path
+
     async def download_media(self, message: IncomingMessage) -> bytes:
         media = message.media
         if media is None:
@@ -353,24 +380,29 @@ class WahaGateway(WhatsAppGateway):
         if isinstance(raw_b64, str) and raw_b64.strip():
             return base64.b64decode(raw_b64.strip().split(",", 1)[-1])
 
-        # Candidatos de download autenticados na base_url do WAHA (com proteção contra path traversal e SSRF):
-        # 1) media.url reescrita para self.base_url (somente caminhos de mídia seguros)
+        # Candidatos de download autenticados na base_url do WAHA ou S3/MinIO pré-assinado:
+        # 1) media.url (reescrita para self.base_url se /api/files/, ou direta sem X-Api-Key se MinIO/S3)
         # 2) /api/files/{filename} (se filename estiver presente e sem traversal)
         # 3) /api/{session}/chats/{chatId}/messages/{messageId}/media
         # 4) /api/{session}/chats/{chatId}/messages/{messageId}?downloadMedia=true
-        candidates: list[tuple[str, str]] = []
+        # 5) /api/{session}/chats/{chatId}/messages?limit=5&downloadMedia=true (fallback GOWS/@lid)
+        candidates: list[tuple[str, str, bool]] = []
         seen_urls: set[str] = set()
 
-        def _add(path_label: str, full_url: str) -> None:
+        def _add(path_label: str, full_url: str, include_auth: bool = True) -> None:
             if full_url not in seen_urls:
                 seen_urls.add(full_url)
-                candidates.append((path_label, full_url))
+                candidates.append((path_label, full_url, include_auth))
 
-        if media.url:
-            parts = urlsplit(media.url)
+        raw_media_url = media.url or dig(message.raw_payload, "payload", "media", "url")
+        if isinstance(raw_media_url, str) and raw_media_url.strip():
+            clean_url = raw_media_url.strip()
+            parts = urlsplit(clean_url)
             path_q = parts.path + (f"?{parts.query}" if parts.query else "")
             if self._is_safe_media_path(parts.path):
-                _add(parts.path, f"{self.base_url}{path_q}")
+                _add(parts.path, f"{self.base_url}{path_q}", True)
+            elif self._is_safe_storage_url(clean_url):
+                _add(parts.path, clean_url, False)
             else:
                 logger.warning("WAHA: caminho de mídia ignorado por segurança: %s", parts.path)
 
@@ -379,16 +411,27 @@ class WahaGateway(WhatsAppGateway):
             if ".." not in unquote(clean_fn) and "\\" not in clean_fn:
                 fn_path = f"/api/files/{quote(clean_fn, safe='/')}"
                 if self._is_safe_media_path(fn_path):
-                    _add(fn_path, f"{self.base_url}{fn_path}")
+                    _add(fn_path, f"{self.base_url}{fn_path}", True)
 
         session = quote(message.session_id or self.default_session, safe="")
-        chat_id = quote(self.chat_id_for(message.chat_id or message.contact_phone), safe="@.")
-        msg_id = quote(media.provider_media_id or message.message_id, safe="@._-")
+        chat_candidates: list[str] = []
+        for raw_chat in (message.chat_id, message.contact_phone):
+            if raw_chat:
+                cid = quote(self.chat_id_for(raw_chat), safe="@.")
+                if cid not in chat_candidates:
+                    chat_candidates.append(cid)
+
+        target_msg_id = media.provider_media_id or message.message_id
+        msg_id = quote(target_msg_id, safe="@._-") if target_msg_id else ""
         if msg_id:
-            msg_media_path = f"/api/{session}/chats/{chat_id}/messages/{msg_id}/media"
-            _add(msg_media_path, f"{self.base_url}{msg_media_path}")
-            msg_dl_path = f"/api/{session}/chats/{chat_id}/messages/{msg_id}"
-            _add(msg_dl_path, f"{self.base_url}{msg_dl_path}?downloadMedia=true")
+            for chat_id in chat_candidates:
+                msg_media_path = f"/api/{session}/chats/{chat_id}/messages/{msg_id}/media"
+                _add(msg_media_path, f"{self.base_url}{msg_media_path}", True)
+                msg_dl_path = f"/api/{session}/chats/{chat_id}/messages/{msg_id}"
+                _add(msg_dl_path, f"{self.base_url}{msg_dl_path}?downloadMedia=true", True)
+            for chat_id in chat_candidates:
+                list_dl_path = f"/api/{session}/chats/{chat_id}/messages"
+                _add(list_dl_path, f"{self.base_url}{list_dl_path}?limit=5&downloadMedia=true", True)
 
         if not candidates:
             raise GatewayError(
@@ -397,7 +440,7 @@ class WahaGateway(WhatsAppGateway):
             )
 
         last_err: GatewayError | None = None
-        for path_label, full_url in candidates:
+        for path_label, full_url, include_auth in candidates:
             try:
                 raw_bytes: bytes = await self._request(
                     "GET",
@@ -405,9 +448,14 @@ class WahaGateway(WhatsAppGateway):
                     absolute_url=full_url,
                     headers={"Accept": "*/*"},
                     expect_json=False,
+                    include_auth=include_auth,
                     log_contact=message.contact_phone,
                 )
-                resolved = await self._unwrap_media_response(raw_bytes, log_contact=message.contact_phone)
+                resolved = await self._unwrap_media_response(
+                    raw_bytes,
+                    target_message_id=target_msg_id,
+                    log_contact=message.contact_phone,
+                )
                 if resolved:
                     return resolved
             except GatewayError as exc:
@@ -418,14 +466,38 @@ class WahaGateway(WhatsAppGateway):
             raise last_err
         raise GatewayError("WAHA: não foi possível baixar a mídia", tenant_id=message.tenant_id)
 
-    async def _unwrap_media_response(self, raw_bytes: bytes, *, log_contact: str | None) -> bytes:
-        """Se o endpoint retornar JSON com `media.data`/`media.url` em vez de binário puro, extrai os bytes."""
+    async def _unwrap_media_response(
+        self,
+        raw_bytes: bytes,
+        *,
+        target_message_id: str | None = None,
+        log_contact: str | None,
+    ) -> bytes:
+        """Se o endpoint retornar JSON (dict ou lista de mensagens) com `media.data`/`media.url`, extrai os bytes."""
         stripped = raw_bytes.lstrip()
-        if stripped.startswith(b"{"):
+        if stripped.startswith((b"{", b"[")):
             try:
-                obj = json.loads(stripped.decode("utf-8"))
+                parsed = json.loads(stripped.decode("utf-8"))
             except (UnicodeDecodeError, ValueError):
                 return raw_bytes
+
+            obj: Mapping[str, Any] | None = None
+            if isinstance(parsed, Mapping):
+                obj = parsed
+            elif isinstance(parsed, list):
+                # Procura a mensagem pelo ID exato ou a mais recente com mídia
+                for item in parsed:
+                    if isinstance(item, Mapping) and target_message_id and str(item.get("id") or "") == target_message_id:
+                        obj = item
+                        break
+                if obj is None:
+                    for item in parsed:
+                        if isinstance(item, Mapping) and (item.get("hasMedia") or isinstance(item.get("media"), Mapping)):
+                            obj = item
+                            break
+                if obj is None:
+                    return b""
+
             if isinstance(obj, Mapping):
                 b64 = (
                     obj.get("data_base64")
@@ -437,7 +509,8 @@ class WahaGateway(WhatsAppGateway):
                     return base64.b64decode(b64.strip().split(",", 1)[-1])
                 nested_url = obj.get("url") or dig(obj, "media", "url")
                 if isinstance(nested_url, str) and nested_url.strip():
-                    parts = urlsplit(nested_url.strip())
+                    clean_nested = nested_url.strip()
+                    parts = urlsplit(clean_nested)
                     if self._is_safe_media_path(parts.path):
                         path_q = parts.path + (f"?{parts.query}" if parts.query else "")
                         return await self._request(
@@ -446,6 +519,18 @@ class WahaGateway(WhatsAppGateway):
                             absolute_url=f"{self.base_url}{path_q}",
                             headers={"Accept": "*/*"},
                             expect_json=False,
+                            include_auth=True,
                             log_contact=log_contact,
                         )
+                    if self._is_safe_storage_url(clean_nested):
+                        return await self._request(
+                            "GET",
+                            parts.path,
+                            absolute_url=clean_nested,
+                            headers={"Accept": "*/*"},
+                            expect_json=False,
+                            include_auth=False,
+                            log_contact=log_contact,
+                        )
+                return b""
         return raw_bytes

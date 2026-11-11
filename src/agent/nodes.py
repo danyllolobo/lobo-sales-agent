@@ -58,8 +58,10 @@ from src.core.schemas import (
     Provider,
     Segment,
     StandardTag,
+    extract_spoken_name,
     sanitize_whatsapp_formatting,
     utcnow,
+    validate_human_name,
 )
 from src.crm.base import CRMConnector
 from src.tools.calendar import CalendarService
@@ -574,7 +576,7 @@ class DeterministicSalesChatModel(BaseChatModel):
             )
 
         # 2. Reconhecimento de Lead Recorrente ("returning_contact=sim")
-        lead_name_match = re.search(r"- Nome do lead:\s*(.+?)\.", sys_text)
+        lead_name_match = re.search(r"(?m)^-\s*Nome do lead:\s*(.+?)\.$", sys_text)
         lead_name = lead_name_match.group(1).strip() if lead_name_match else ""
         if lead_name.lower() in ("não informado", "nao informado", "lead playground"):
             lead_name = ""
@@ -618,41 +620,43 @@ class DeterministicSalesChatModel(BaseChatModel):
 
         if is_returning:
             greeting_name = f", {lead_name}" if lead_name else ""
+            ask_name = "" if lead_name else " Como posso te chamar?"
             return (
-                f"Oi{greeting_name}! Que bom falar com você de novo! 😊\n\n"
+                f"Oi{greeting_name}! Que bom falar com você de novo! 😊{ask_name}\n\n"
                 "Como posso te ajudar hoje?"
             )
 
+        ask_name_clause = "" if lead_name else " Como posso te chamar?"
         if has_ad_context:
             if "segmento: `psychology`" in sys_text:
                 return (
                     f"Olá{f', {lead_name}' if lead_name else ''}, tudo bem? Seja muito bem-vindo(a) à Vizzu Psicologia! 😊 "
-                    "Vai ser um enorme prazer te atender!\n\n"
+                    f"Vai ser um enorme prazer te atender!{ask_name_clause}\n\n"
                     "Para eu te direcionar ao especialista ideal: o atendimento seria para *você (adulto)* "
                     "ou para *criança/adolescente (qual a idade)*? E você busca *psicoterapia* ou *avaliação neuropsicológica*?"
                 )
             if "segmento: `pools`" in sys_text:
                 return (
                     f"Opa{f', {lead_name}' if lead_name else ''}, tudo bom? Seja muito bem-vindo(a) à Splash Piscinas! 🏊‍♂️ "
-                    "Show de bola, vai ser um enorme prazer te atender!\n\n"
+                    f"Show de bola, vai ser um enorme prazer te atender!{ask_name_clause}\n\n"
                     "Para eu preparar as melhores opções: de qual *cidade* você fala e qual é o *espaço aproximado* disponível no seu terreno?"
                 )
             return (
                 f"Opa{f', {lead_name}' if lead_name else ''}! Tudo bom? Seja muito bem-vindo(a) à Companhia dos Sonhos! 😊 "
-                "Show de bola, temos vários modelos a pronta-entrega aqui na nossa loja da *Tavares Bastos (Marambaia)*!\n\n"
+                f"Show de bola, temos vários modelos a pronta-entrega aqui na nossa loja da *Tavares Bastos (Marambaia)*!{ask_name_clause}\n\n"
                 "Para eu separar as melhores opções para você: qual *medida* você procura (solteiro, casal, queen ou king) "
                 "e você prefere um colchão mais *firme para a coluna* ou mais *macio com molas ensacadas*?"
             )
 
         if "segmento: `psychology`" in sys_text:
             return (
-                "Olá! Seja muito bem-vindo(a) à Vizzu Psicologia. 😊\n\n"
+                f"Olá! Seja muito bem-vindo(a) à Vizzu Psicologia. 😊{ask_name_clause}\n\n"
                 "Para eu te direcionar da melhor forma: você busca atendimento para *adulto ou infantil (criança)*? "
                 "E seria para *psicoterapia regular* ou *avaliação neuropsicológica*?"
             )
         if "segmento: `pools`" in sys_text:
             return (
-                "Olá! Tudo bem? Seja bem-vindo(a) à Splash Piscinas! 🏊‍♂️\n\n"
+                f"Olá! Tudo bem? Seja bem-vindo(a) à Splash Piscinas! 🏊‍♂️{ask_name_clause}\n\n"
                 "Para eu preparar seu orçamento: de qual *cidade* você fala e qual é o *espaço aproximado* "
                 "disponível no terreno? Se puder enviar uma foto da área, também ajuda bastante!"
             )
@@ -660,12 +664,12 @@ class DeterministicSalesChatModel(BaseChatModel):
             name_match = re.search(r"empresa \*\*(.+?)\*\*", sys_text)
             company = name_match.group(1) if name_match else "nossa empresa"
             return (
-                f"Olá! Tudo bem? Seja muito bem-vindo(a) à *{company}*! 😊\n\n"
+                f"Olá! Tudo bem? Seja muito bem-vindo(a) à *{company}*! 😊{ask_name_clause}\n\n"
                 "Me conta um pouco sobre o seu negócio: qual é o seu *segmento* e qual é o principal "
                 "*desafio comercial* hoje (gerar mais clientes, atender mais rápido no WhatsApp ou organizar o funil)?"
             )
         return (
-            "Olá, boa tarde! Seja muito bem-vindo(a)! 😊\n\n"
+            f"Olá, boa tarde! Seja muito bem-vindo(a)! 😊{ask_name_clause}\n\n"
             "Para eu te indicar o colchão ideal: qual *tamanho* você procura (solteiro, casal, queen ou king) "
             "e você prefere um modelo mais *firme* para a coluna ou com *molas ensacadas* e pillow top?"
         )
@@ -719,7 +723,7 @@ class DeterministicSalesChatModel(BaseChatModel):
                     )
 
         norm = f" {normalize_text(user_text)} "
-        lead_name_match = re.search(r"- Nome do lead:\s*(.+?)\.", sys_text)
+        lead_name_match = re.search(r"(?m)^-\s*Nome do lead:\s*(.+?)\.$", sys_text)
         lead_name = lead_name_match.group(1).strip() if lead_name_match else ""
         if lead_name.lower() in ("não informado", "nao informado", "lead playground"):
             lead_name = ""
@@ -737,18 +741,21 @@ class DeterministicSalesChatModel(BaseChatModel):
         )
 
         if has_ad_context:
+            ask_name_ad = "" if lead_name else " Como posso te chamar?"
             if "segmento: `mattress`" in sys_text:
                 greeting = (
                     f"Opa{f', {lead_name}' if lead_name else ''}! Tudo bom? Seja muito bem-vindo(a) à Companhia dos Sonhos! 😊 "
-                    "Show de bola, temos vários modelos a pronta-entrega aqui na nossa loja da *Tavares Bastos (Marambaia)*!"
+                    f"Show de bola, temos vários modelos a pronta-entrega aqui na nossa loja da *Tavares Bastos (Marambaia)*!{ask_name_ad}"
                 )
             else:
                 greeting = (
                     f"Opa{f', {lead_name}' if lead_name else ''}! Tudo bom? Seja muito bem-vindo(a)! 😊 "
-                    "Show de bola, vai ser um enorme prazer te atender!"
+                    f"Show de bola, vai ser um enorme prazer te atender!{ask_name_ad}"
                 )
         elif is_returning and lead_name:
             greeting = f"Oi, {lead_name}! Que bom falar com você de novo! 😊"
+        elif not lead_name:
+            greeting = "Olá, boa tarde! Tudo bem? 😊 Como posso te chamar?"
         else:
             greeting = "Olá, boa tarde! Tudo bem? 😊"
 
@@ -1017,6 +1024,23 @@ def _extract_last_user_text(state: AgentState) -> str:
     return ""
 
 
+def _last_ai_asked_for_name(messages: list[BaseMessage]) -> bool:
+    for msg in reversed(messages):
+        if isinstance(msg, AIMessage):
+            txt = normalize_text(_extract_ai_text(msg.content))
+            return any(
+                k in txt
+                for k in (
+                    "como posso te chamar",
+                    "qual e o seu nome",
+                    "qual o seu nome",
+                    "seu nome",
+                    "com quem eu falo",
+                )
+            )
+    return False
+
+
 class AgentNodes:
     """Agrupa os nós executáveis do `StateGraph` com suas dependências injetadas."""
 
@@ -1108,15 +1132,31 @@ class AgentNodes:
         lead.touch()
         if lead.status is LeadStatus.NEW:
             lead.status = LeadStatus.IN_PROGRESS
+
+        # Garante que nomes previamente salvos não sejam abreviações/emojis/frases do WhatsApp
+        if lead.name and lead.attributes.get("name_confirmed") != "sim":
+            lead.name = validate_human_name(lead.name)
+
         if batch is not None:
-            if batch.contact_name and not lead.name:
-                lead.name = batch.contact_name
+            if batch.contact_name:
+                lead.attributes["whatsapp_push_name"] = batch.contact_name
+                if not lead.name:
+                    clean_contact_name = validate_human_name(batch.contact_name)
+                    if clean_contact_name:
+                        lead.name = clean_contact_name
             for m in batch.messages:
                 if m.ad_referral and not lead.source:
                     lead.source = "meta_ads"
                     lead.attributes.setdefault("ctwa_source", m.ad_referral.get("sourceId") or "meta_ads")
 
         user_text = _extract_last_user_text(state)
+        spoken_name = extract_spoken_name(
+            user_text,
+            asked_for_name=_last_ai_asked_for_name(state.get("messages") or []),
+        )
+        if spoken_name:
+            lead.name = spoken_name
+            lead.attributes["name_confirmed"] = "sim"
         decision = self._jev.analyze(user_text, segment=tenant.tenant.segment)
         if decision.extracted_attributes:
             lead.attributes.update(decision.extracted_attributes)

@@ -861,6 +861,262 @@ def split_human_chunks(text: str, max_chars: int = 400, max_chunks: int = 4) -> 
 
 
 # --------------------------------------------------------------------------- #
+# Validação e Extração de Nome Real de Cliente (Anti-Emoji / Anti-Abreviação WhatsApp)
+# --------------------------------------------------------------------------- #
+_ONLY_LETTERS_NAME_RE = re.compile(r"^[A-Za-zÀ-ÖØ-öø-ÿ]+(?:\s+[A-Za-zÀ-ÖØ-öø-ÿ]+)?$")
+_VOWELS_RE = re.compile(r"[aeiouáéíóúâêôãõàüAEIOUÁÉÍÓÚÂÊÔÃÕÀÜ]")
+_REPEATED_CHAR_RE = re.compile(r"(.)\1\1", re.IGNORECASE)
+
+_SUSPICIOUS_NAME_TOKENS: frozenset[str] = frozenset(
+    {
+        # Termos genéricos / sistema
+        "lead",
+        "cliente",
+        "visitante",
+        "contato",
+        "usuario",
+        "user",
+        "admin",
+        "teste",
+        "test",
+        "playground",
+        "whatsapp",
+        "aparelho",
+        "numero",
+        "desconhecido",
+        "anonimo",
+        "novo",
+        "nova",
+        # Termos empresariais / comerciais / nichos
+        "loja",
+        "clinica",
+        "consultorio",
+        "empresa",
+        "comercial",
+        "vendas",
+        "atendimento",
+        "suporte",
+        "sac",
+        "oficial",
+        "grupo",
+        "comunidade",
+        "equipe",
+        "time",
+        "marketing",
+        "digital",
+        "agencia",
+        "ads",
+        "lobo",
+        "loboads",
+        "vizzu",
+        "splash",
+        "sonhos",
+        "companhia",
+        "ortobom",
+        "piscinas",
+        "piscina",
+        "colchoes",
+        "colchao",
+        "moveis",
+        "estetica",
+        "odonto",
+        "odontologia",
+        "psicologia",
+        "psicoterapia",
+        "terapia",
+        "reabilita",
+        "tratabem",
+        "imobiliaria",
+        "construtora",
+        "advocacia",
+        "direito",
+        "escola",
+        "curso",
+        "auto",
+        "veiculos",
+        "oficina",
+        "delivery",
+        "express",
+        "pastel",
+        "calcadao",
+        "lanches",
+        "restaurante",
+        "mercado",
+        "farmacia",
+        "salao",
+        "barbearia",
+        "studio",
+        "estudio",
+        "spa",
+        # Frases religiosas / familiares / status comuns em perfil de WhatsApp
+        "deus",
+        "jesus",
+        "cristo",
+        "senhor",
+        "fiel",
+        "gratidao",
+        "abencoado",
+        "abencoada",
+        "ungido",
+        "ungida",
+        "amor",
+        "paz",
+        "vida",
+        "familia",
+        "mae",
+        "mamae",
+        "pai",
+        "papai",
+        "filho",
+        "filha",
+        "irmao",
+        "irma",
+        "tio",
+        "tia",
+        "status",
+        "online",
+        "ocupado",
+        "disponivel",
+        "esined",
+        # Saudações, medidas, cidades e palavras de chat (evita falso-positivo ao extrair nome)
+        "bom",
+        "boa",
+        "dia",
+        "tarde",
+        "noite",
+        "ola",
+        "opa",
+        "oi",
+        "tudo",
+        "bem",
+        "quero",
+        "queria",
+        "gostaria",
+        "preciso",
+        "procuro",
+        "orcamento",
+        "valor",
+        "valores",
+        "preco",
+        "precos",
+        "quanto",
+        "custa",
+        "tem",
+        "ainda",
+        "hoje",
+        "amanha",
+        "king",
+        "queen",
+        "casal",
+        "solteiro",
+        "molas",
+        "espuma",
+        "ortopedico",
+        "fibra",
+        "adulto",
+        "infantil",
+        "crianca",
+        "sim",
+        "nao",
+        "obrigado",
+        "obrigada",
+        "valeu",
+        "beleza",
+        "show",
+        "belem",
+        "ananindeua",
+        "marambaia",
+        "tapana",
+        "icoaraci",
+        "umarizal",
+        "castanhal",
+        "paragominas",
+    }
+)
+
+_EXPLICIT_NAME_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"\b(?:meu\s+nome\s+[eé]|me\s+chamo|pode\s+me\s+chamar\s+de|aqui\s+[eé]\s+(?:o|a)|eu\s+sou\s+(?:o|a)|sou\s+(?:o|a))\s+([A-Za-zÀ-ÖØ-öø-ÿ]{3,20})(?:\s+([A-Za-zÀ-ÖØ-öø-ÿ]{3,20}))?\b",
+        re.IGNORECASE,
+    ),
+)
+
+
+def _ascii_lower(word: str) -> str:
+    import unicodedata
+
+    norm = unicodedata.normalize("NFKD", word)
+    return "".join(ch for ch in norm if not unicodedata.combining(ch)).lower().strip()
+
+
+def validate_human_name(raw_name: str | None) -> str | None:
+    """Valida se `raw_name` é um nome humano real e confiável (descartando apelidos do WhatsApp
+    com emojis, abreviações como `D Lobo`, frases como `Deus E Fiel` ou nomes de empresas).
+
+    Retorna o primeiro nome capitalizado (ex.: `"Carlos"`) quando válido, ou `None` quando suspeito.
+    """
+    if not raw_name or not isinstance(raw_name, str):
+        return None
+    cleaned = " ".join(raw_name.strip().split())
+    if not cleaned or len(cleaned) < 3 or len(cleaned) > 35:
+        return None
+
+    # Qualquer emoji, pontuação, dígito ou símbolo invalida o pushName imediatamente
+    if not _ONLY_LETTERS_NAME_RE.fullmatch(cleaned):
+        return None
+
+    words = cleaned.split()
+    if not words or len(words) > 2:
+        return None
+
+    for w in words:
+        # Abreviações de 1 ou 2 letras (ex.: "D Lobo", "J Silva", "Do", "De", "E") são descartadas
+        if len(w) < 3 or len(w) > 18:
+            return None
+        if not _VOWELS_RE.search(w) or _REPEATED_CHAR_RE.search(w):
+            return None
+        if _ascii_lower(w) in _SUSPICIOUS_NAME_TOKENS:
+            return None
+
+    return words[0].capitalize()
+
+
+def extract_spoken_name(user_text: str, *, asked_for_name: bool = False) -> str | None:
+    """Extrai o nome informado pelo próprio cliente durante a conversa no WhatsApp."""
+    if not user_text or not isinstance(user_text, str):
+        return None
+    text = user_text.strip()
+    if not text:
+        return None
+
+    # 1. Padrões explícitos ("Meu nome é Danyllo", "Me chamo Fernanda", "Sou o Carlos")
+    for pattern in _EXPLICIT_NAME_PATTERNS:
+        m = pattern.search(text)
+        if m:
+            first_word = m.group(1)
+            validated = validate_human_name(first_word)
+            if validated:
+                return validated
+
+    # 2. Resposta direta logo após o agente perguntar "Como posso te chamar?" / "Qual é o seu nome?"
+    if asked_for_name:
+        first_clause = re.split(r"[,.;!?\n\r]+", text, maxsplit=1)[0].strip()
+        first_clause = re.sub(
+            r"^(?:oi+|ol[aá]+|opa+|bom\s+dia|boa\s+tarde|boa\s+noite|[eé]\s+o|[eé]\s+a|sou\s+o|sou\s+a|sou|aqui\s+[eé]\s+o|aqui\s+[eé]\s+a|aqui\s+[eé]|meu\s+nome\s+[eé]|me\s+chamo)\s+",
+            "",
+            first_clause,
+            flags=re.IGNORECASE,
+        ).strip()
+        tokens = first_clause.split()
+        if 1 <= len(tokens) <= 2:
+            candidate = validate_human_name(tokens[0])
+            if candidate:
+                return candidate
+
+    return None
+
+
+# --------------------------------------------------------------------------- #
 # Tenant
 # --------------------------------------------------------------------------- #
 SUPPORTED_LLM_MODELS: tuple[str, ...] = (

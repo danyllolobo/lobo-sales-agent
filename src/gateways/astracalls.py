@@ -344,6 +344,31 @@ class AstraCallsGateway(WhatsAppGateway):
             "/media" in decoded or "/files/" in decoded
         )
 
+    @staticmethod
+    def _is_safe_storage_url(url: str) -> bool:
+        """Valida URLs pré-assinadas de Object Storage (MinIO / S3) bloqueando SSRF e Path Traversal."""
+        if not url or not isinstance(url, str):
+            return False
+        parts = urlsplit(url.strip())
+        if parts.scheme.lower() not in ("https", "http") or not parts.hostname:
+            return False
+        host = parts.hostname.lower()
+        if host in ("localhost", "127.0.0.1", "0.0.0.0", "::1", "169.254.169.254") or host.startswith(
+            ("127.", "169.254.")
+        ):
+            return False
+        decoded_path = unquote(parts.path or "")
+        if not decoded_path.startswith("/") or ".." in decoded_path or "\\" in decoded_path or "//" in decoded_path:
+            return False
+        if decoded_path.startswith("/api/"):
+            return False
+        query_lower = (parts.query or "").lower()
+        return any(
+            k in query_lower for k in ("x-amz-signature", "x-amz-algorithm", "x-amz-credential", "signature=", "token=")
+        ) or decoded_path.lower().endswith(
+            (".oga", ".ogg", ".opus", ".mp3", ".m4a", ".wav", ".aac", ".webm", ".mp4", ".jpg", ".jpeg", ".png", ".webp", ".pdf")
+        )
+
     async def download_media(self, message: IncomingMessage) -> bytes:
         media = message.media
         if media is None:
@@ -351,21 +376,28 @@ class AstraCallsGateway(WhatsAppGateway):
         if media.data_base64:
             return base64.b64decode(media.data_base64.split(",", 1)[-1])
 
-        candidates: list[tuple[str, str]] = []
+        raw_b64 = dig(message.raw_payload, "data", "base64") or dig(message.raw_payload, "data", "data_base64")
+        if isinstance(raw_b64, str) and raw_b64.strip():
+            return base64.b64decode(raw_b64.strip().split(",", 1)[-1])
+
+        candidates: list[tuple[str, str, bool]] = []
         if media.url:
-            parts = urlsplit(media.url)
+            clean_url = media.url.strip()
+            parts = urlsplit(clean_url)
             if self._is_safe_media_path(parts.path):
                 path_q = parts.path + (f"?{parts.query}" if parts.query else "")
-                candidates.append((parts.path, f"{self.base_url}{path_q}"))
+                candidates.append((parts.path, f"{self.base_url}{path_q}", True))
+            elif self._is_safe_storage_url(clean_url):
+                candidates.append((parts.path, clean_url, False))
             else:
                 logger.warning("AstraCalls: caminho de mídia ignorado por segurança: %s", parts.path)
 
         media_id = media.provider_media_id or message.message_id
         msg_path = self._session_path(message.session_id, f"messages/{quote(media_id, safe='')}/media")
-        candidates.append((msg_path, f"{self.base_url}{msg_path}"))
+        candidates.append((msg_path, f"{self.base_url}{msg_path}", True))
 
         last_err: GatewayError | None = None
-        for path_label, full_url in candidates:
+        for path_label, full_url, include_auth in candidates:
             try:
                 raw_bytes: bytes = await self._request(
                     "GET",
@@ -373,6 +405,7 @@ class AstraCallsGateway(WhatsAppGateway):
                     absolute_url=full_url,
                     headers={"Accept": "*/*"},
                     expect_json=False,
+                    include_auth=include_auth,
                     log_contact=message.contact_phone,
                 )
                 stripped = raw_bytes.lstrip()

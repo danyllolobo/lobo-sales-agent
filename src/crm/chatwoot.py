@@ -21,7 +21,7 @@ import httpx
 from pydantic import SecretStr
 
 from src.core.exceptions import CRMError
-from src.core.schemas import CRMProvider, LeadProfile, StandardTag
+from src.core.schemas import CRMProvider, LeadProfile, StandardTag, validate_human_name
 from src.crm.base import CRMConnector
 
 _DIGITS = re.compile(r"\D")
@@ -75,6 +75,11 @@ class ChatwootConnector(CRMConnector):
         for contact in found if isinstance(found, list) else []:
             if _DIGITS.sub("", str(contact.get("phone_number") or "")) == lead.phone:
                 lead.crm_contact_id = str(contact["id"])
+                if not lead.name:
+                    crm_name = validate_human_name(str(contact.get("name") or ""))
+                    if crm_name:
+                        lead.name = crm_name
+                        lead.attributes["name_confirmed"] = "sim"
                 return lead.crm_contact_id
         if not self.create_missing:
             raise CRMError("Chatwoot: contato não encontrado", tenant_id=lead.tenant_id)
