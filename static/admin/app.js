@@ -89,7 +89,7 @@
     ["gpt-4o", "gpt-4o (OpenAI)"],
     ["gpt-4o-mini", "gpt-4o-mini (OpenAI)"],
   ];
-  const INTEGRATION_ICONS = { gemini: "✨", openai: "🎙️", waha: "🟢", astracalls: "📞", chatwoot: "💬", ghl: "🧠" };
+  const INTEGRATION_ICONS = { gemini: "sparkles", openai: "mic", waha: "message-circle", astracalls: "phone", chatwoot: "messages", ghl: "workflow" };
 
   const S = {
     overview: null,
@@ -112,6 +112,8 @@
   const nowTime = () => new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
   const mmss = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.max(0, s % 60)).padStart(2, "0")}`;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // Ícone SVG do sprite de index.html (puramente visual; decorativo para leitores de tela)
+  const ico = (name, cls = "") => `<svg class="ico${cls ? ` ${cls}` : ""}" aria-hidden="true" focusable="false"><use href="#i-${name}"></use></svg>`;
 
   function relTime(iso) {
     const diff = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -156,7 +158,7 @@
   function toast(kind, title, msg = "", ms = null) {
     const el = document.createElement("div");
     el.className = `toast ${kind}`;
-    el.innerHTML = `<span class="t-icon">${kind === "ok" ? "🟢" : "🔴"}</span>
+    el.innerHTML = `<span class="t-icon">${ico(kind === "ok" ? "check-circle" : "x-circle")}</span>
       <div class="t-body"><div class="t-title">${esc(title)}</div>${msg ? `<div class="t-msg">${esc(msg)}</div>` : ""}</div>
       ${ms !== null ? `<span class="t-ms">${esc(ms)} ms</span>` : ""}`;
     $("#toasts").appendChild(el);
@@ -221,7 +223,7 @@
   $("#btn-theme").addEventListener("click", () => {
     const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
     applyTheme(next);
-    toast("ok", next === "dark" ? "🌙 Tema escuro ativado" : "☀️ Tema claro ativado");
+    toast("ok", next === "dark" ? "Tema escuro ativado" : "Tema claro ativado");
   });
 
   // ------------------------------------------------------------------ auth
@@ -270,7 +272,7 @@
       if (k.ok) {
         S.kernelLoaded = true;
         $("#kn-text").textContent = k.data.kernel;
-        $("#kn-meta").textContent = `🔒 somente leitura · ${k.data.chars.toLocaleString("pt-BR")} caracteres`;
+        $("#kn-meta").textContent = `somente leitura · ${k.data.chars.toLocaleString("pt-BR")} caracteres`;
         $("#kn-blocks").innerHTML = k.data.blocks.map((b) => `<span class="chip">${esc(b)}</span>`).join("");
       } else {
         $("#kn-text").textContent = `Falha ao carregar o Kernel: ${k.error}`;
@@ -285,23 +287,25 @@
     const sc = r.data.scheduler || {};
     const chip = $("#fu-sched-chip");
     chip.className = `chip ${sc.running ? "chip-ok" : "chip-err"}`;
-    chip.textContent = sc.running ? `🟢 automática · a cada ${Math.round(sc.interval_seconds)}s` : "🔴 agendador parado";
+    chip.textContent = sc.running ? `automática · a cada ${Math.round(sc.interval_seconds)}s` : "agendador parado";
     const last = sc.last_run_at ? `${relTime(sc.last_run_at)} (${sc.last_result?.evaluated ?? 0} conversas avaliadas)` : "ainda não rodou";
     const reasons = Object.entries(r.data.skipped_reasons || {}).filter(([k]) => k !== "delay_not_reached")
       .map(([k, n]) => `${n}× ${esc(FU_SKIP_LABEL[k] || k)}`).join(" · ");
     $("#fu-sched-body").innerHTML = `
-      <div class="kv"><span>Última varredura</span><strong>${esc(last)}</strong></div>
-      <div class="kv"><span>Enviados desde que o servidor subiu</span><strong>${esc(sc.total_sent ?? 0)}</strong></div>
-      ${sc.last_error ? `<div class="notice notice-warn">Último erro: ${esc(sc.last_error)}</div>` : ""}
+      <div class="stats">
+        <div class="stat"><span class="stat-label">Última varredura</span><strong class="stat-value">${esc(last)}</strong></div>
+        <div class="stat"><span class="stat-label">Enviados desde que o servidor subiu</span><strong class="stat-value">${esc(sc.total_sent ?? 0)}</strong></div>
+      </div>
+      ${sc.last_error ? `<div class="notice notice-warn">${ico("alert")}Último erro: ${esc(sc.last_error)}</div>` : ""}
       ${reasons ? `<p class="muted">Fora da fila agora: ${reasons}</p>` : ""}
       <p class="muted">Cada cliente liga a régua e define as etapas em <a href="#tenants" data-goto-tab="tenants">Clientes &amp; Catálogo</a>. O tempo de cada etapa conta a partir da última mensagem enviada.</p>`;
     const q = r.data.queue || [];
     $("#fu-queue").innerHTML = q.length ? q.map((it) => `
       <div class="list-item">
-        <div class="grow"><strong>${esc(it.name || it.phone_masked)}</strong> <span class="muted small">${esc(it.tenant_id)}</span>
+        <div class="grow"><strong>${esc(it.name || it.phone_masked)}</strong> <span class="muted small mono">${esc(it.tenant_id)}</span>
           <div class="muted small">${esc(it.attempt)}º toque · ${esc(FU_STRATEGY_LABEL[it.strategy] || it.strategy || "")}</div></div>
-        <span class="chip ${it.due_in_minutes <= 0 ? "chip-warn" : ""}">${it.due_in_minutes <= 0 ? "envia na próxima varredura" : `em ${fmtMinutes(it.due_in_minutes)}`}</span>
-      </div>`).join("") : `<div class="empty">Nenhum lead aguardando follow-up agora.</div>`;
+        <span class="chip ${it.due_in_minutes <= 0 ? "chip-warn" : ""}">${it.due_in_minutes <= 0 ? "envia na próxima varredura" : `${ico("clock")}em ${fmtMinutes(it.due_in_minutes)}`}</span>
+      </div>`).join("") : `<div class="empty">${ico("check-circle", "ico-lg")}Nenhum lead aguardando follow-up agora.</div>`;
   }
   function fmtMinutes(m) {
     if (m < 60) return `${Math.ceil(m)} min`;
@@ -332,7 +336,7 @@
     S.tenants = r.data.tenants;
     const env = r.data.environment;
     $("#env-badge").className = `badge ${env === "production" ? "badge-ok" : "badge-info"}`;
-    $("#env-badge").textContent = `🌐 ${env}`;
+    $("#env-badge").textContent = `ambiente: ${env}`;
     $("#version-badge").textContent = `v${r.data.version}`;
     $("#auth-warning").classList.toggle("hidden", !!r.data.auth_required);
     setSandboxBadge(r.data.sandbox_active);
@@ -345,7 +349,7 @@
   function setSandboxBadge(active) {
     const b = $("#sandbox-badge");
     b.className = `badge ${active ? "badge-warn" : "badge-ok"}`;
-    b.textContent = active ? "🔒 Sandbox ativo" : "🟢 Produção aberta";
+    b.textContent = active ? "Sandbox ativo" : "Produção aberta";
   }
 
   function fillTenantSelects() {
@@ -380,7 +384,7 @@
     setSandboxBadge(sb.active);
     $("#sandbox-enabled").checked = cfg.enabled;
     $("#sandbox-switch-wrap").classList.toggle("forced", sb.forced_by_environment && !cfg.enabled);
-    const title = sb.active ? "🔒 Modo Sandbox Seguro (Ativo)" : "🟢 Modo Produção Aberto (Atende Todos)";
+    const title = sb.active ? "Modo Sandbox seguro (ativo)" : "Modo Produção aberto (atende todos)";
     $("#sandbox-switch-title").textContent = title;
     $("#sandbox-switch-sub").textContent = sb.active
       ? (!cfg.enabled && sb.forced_by_environment
@@ -415,9 +419,9 @@
       const modelEl = $("#sandbox-llm-model");
       if (modelEl) modelEl.value = cfg.llm_model || S.overview?.gemini_model || "gemini-3.8-flash";
     }
-    const phones = cfg.allowed_phones.map((p) => `<span class="chip chip-info">📱 ${esc(p)}<button data-phone="${esc(p)}" title="Remover">×</button></span>`);
-    const seeds = sb.seed_phones.map((p) => `<span class="chip chip-lock" title="Definido em SANDBOX_ALLOWED_PHONES (.env)">🔒 ${esc(p)} · .env</span>`);
-    $("#sandbox-phones").innerHTML = phones.concat(seeds).join("") || `<div class="empty">Nenhum número liberado ainda.</div>`;
+    const phones = cfg.allowed_phones.map((p) => `<span class="chip chip-info">${ico("smartphone")}<span class="mono">${esc(p)}</span><button type="button" data-phone="${esc(p)}" title="Remover" aria-label="Remover ${esc(p)} da whitelist">×</button></span>`);
+    const seeds = sb.seed_phones.map((p) => `<span class="chip chip-lock" title="Definido em SANDBOX_ALLOWED_PHONES (.env)"><span class="mono">${esc(p)}</span> · .env</span>`);
+    $("#sandbox-phones").innerHTML = phones.concat(seeds).join("") || `<div class="empty">${ico("smartphone", "ico-lg")}Nenhum número liberado ainda.</div>`;
     renderSessions();
   }
 
@@ -427,11 +431,11 @@
       ? sessions.map((s, i) => `
         <div class="list-item">
           <span class="chip chip-ok">ATIVA</span>
-          <div class="grow"><strong>${esc(s.phone)}</strong><div class="muted small">${esc(tenantSummary(s.tenant_id)?.display_name || s.tenant_id)}</div></div>
-          <span class="mono small" data-countdown="${i}">⏱ ${mmss(s.expires_in_seconds)}</span>
-          <button class="btn btn-danger btn-sm" data-end-session="${i}">Encerrar / Resetar</button>
+          <div class="grow"><strong class="mono">${esc(s.phone)}</strong><div class="muted small">${esc(tenantSummary(s.tenant_id)?.display_name || s.tenant_id)}</div></div>
+          <span class="mono small countdown" title="Tempo restante">${ico("clock")}<span data-countdown="${i}">${mmss(s.expires_in_seconds)}</span></span>
+          <button class="btn btn-danger btn-sm" data-end-session="${i}">${ico("rotate-ccw")}Encerrar / Resetar</button>
         </div>`).join("")
-      : `<div class="empty">Nenhuma sessão de teste ativa. Envie <code>${esc(S.sandbox?.config.trigger_keywords[0] || "/lobo")}</code> no WhatsApp para abrir uma.</div>`;
+      : `<div class="empty">${ico("clock", "ico-lg")}<span>Nenhuma sessão de teste ativa. Envie <code>${esc(S.sandbox?.config.trigger_keywords[0] || "/lobo")}</code> no WhatsApp para abrir uma.</span></div>`;
   }
 
   setInterval(() => {
@@ -442,7 +446,7 @@
       s.expires_in_seconds -= 1;
       if (s.expires_in_seconds <= 0) expired = true;
       const el = $(`[data-countdown="${i}"]`);
-      if (el) el.textContent = `⏱ ${mmss(s.expires_in_seconds)}`;
+      if (el) el.textContent = mmss(s.expires_in_seconds);
     });
     if (expired) { S.sandbox.sessions = sessions.filter((s) => s.expires_in_seconds > 0); renderSessions(); }
   }, 1000);
@@ -454,7 +458,7 @@
       ev.target.checked = true;
       return;
     }
-    const r = await act(null, enabled ? "🔒 Sandbox ativado" : "🟢 Modo produção salvo", () => api("PUT", "/api/admin/sandbox", { enabled }),
+    const r = await act(null, enabled ? "Sandbox ativado" : "Modo produção salvo", () => api("PUT", "/api/admin/sandbox", { enabled }),
       { okMsg: (d) => (d.forced_by_environment && !enabled ? "Fora de produção a trava continua ativa." : "") });
     if (r.ok) { S.sandbox = r.data; } else { ev.target.checked = !enabled; }
     renderSandbox();
@@ -541,19 +545,19 @@
     $("#integrations").innerHTML = order.filter((n) => S.integrations[n]).map((n) => {
       const it = S.integrations[n];
       let badge;
-      if (it.status === "ok") badge = `<span class="badge badge-ok">🟢 SUCESSO · ${esc(it.latency_ms)} ms</span>`;
-      else if (it.status === "error") badge = `<span class="badge badge-err">🔴 ERRO</span>`;
-      else if (!it.configured) badge = `<span class="badge badge-ghost">⚪ Não configurado</span>`;
+      if (it.status === "ok") badge = `<span class="badge badge-ok">Sucesso · <span class="num">${esc(it.latency_ms)} ms</span></span>`;
+      else if (it.status === "error") badge = `<span class="badge badge-err">Erro</span>`;
+      else if (!it.configured) badge = `<span class="badge badge-ghost">Não configurado</span>`;
       else badge = `<span class="badge badge-ghost">Configurado · não testado</span>`;
       const detail = it.detail || (it.configured ? "Clique em testar para verificar a conexão real." : "Credenciais ausentes no ambiente.");
       return `<div class="integration ${esc(it.status || "")}" data-integration="${esc(n)}">
         <div class="integration-head">
-          <div class="integration-icon">${INTEGRATION_ICONS[n] || "🔌"}</div>
-          <div class="integration-title"><strong>${esc(it.label)}</strong><small>${esc(it.target || "—")}</small></div>
+          <div class="integration-icon">${ico(INTEGRATION_ICONS[n] || "plug")}</div>
+          <div class="integration-title"><strong>${esc(it.label)}</strong><small title="${esc(it.target || "")}">${esc(it.target || "—")}</small></div>
         </div>
         ${badge}
         <div class="integration-detail">${esc(detail)}</div>
-        <button class="btn btn-sm" data-test="${esc(n)}">⚡ Testar Conexão</button>
+        <button class="btn btn-sm" data-test="${esc(n)}">${ico("zap")}Testar conexão</button>
       </div>`;
     }).join("");
   }
@@ -613,7 +617,7 @@
       ? chat.map((m) => {
           if (m.role === "system") return `<div class="bubble system">${esc(m.text)}</div>`;
           const cls = `bubble ${m.role === "lead" ? "out" : "in"}${m.pending ? " pending" : ""}${m.handoff ? " handoff" : ""}`;
-          const tick = m.role === "lead" ? (m.pending ? " 🕓" : " ✓✓") : "";
+          const tick = m.role === "lead" ? (m.pending ? ico("clock") : " ✓✓") : "";
           return `<div class="${cls}">${md(m.text)}<span class="meta">${esc(m.time)}${tick}</span></div>`;
         }).join("") + (S.pg.busy ? `<div class="typing"><span></span><span></span><span></span></div>` : "")
       : `<div class="bubble system">Converse como se fosse o lead. Mensagens enviadas em sequência são agrupadas pelo debounce em 1 único turno.</div>`;
@@ -640,7 +644,7 @@
       const deadline = Math.min(S.pg.lastAt + silence, S.pg.firstAt + maxWin);
       const remaining = deadline - Date.now();
       $("#pg-debounce-fill").style.width = `${Math.max(0, Math.min(100, (remaining / silence) * 100))}%`;
-      $("#pg-debounce-label").textContent = `⏳ Agrupando ${S.pg.queue.length} mensagem(ns) · envio em ${(Math.max(0, remaining) / 1000).toFixed(1)}s`;
+      $("#pg-debounce-label").textContent = `Agrupando ${S.pg.queue.length} mensagem(ns) · envio em ${(Math.max(0, remaining) / 1000).toFixed(1)}s`;
       if (remaining <= 0 && !S.pg.busy) pgFlush();
     }, 100);
   }
@@ -679,11 +683,11 @@
     }
     const t = r.data;
     if (t.reply_text) pgChat().push({ role: "ia", text: t.reply_text, time: nowTime(), handoff: t.status === "handoff" });
-    if (t.status === "silenced") pgChat().push({ role: "system", text: `🔇 IA silenciada (${t.silence_reason || "humano ativo"}) — use 🗑️ Limpar para recomeçar.` });
+    if (t.status === "silenced") pgChat().push({ role: "system", text: `🔇 IA silenciada (${t.silence_reason || "humano ativo"}) — use Limpar para recomeçar.` });
     if (t.status === "handoff") pgChat().push({ role: "system", text: `🟡 Handoff humano acionado (${t.handoff_reason}). IA pausada para este contato.` });
     renderChat();
     renderXray(t);
-    const titles = { success: "🟢 Turno processado com sucesso", handoff: "🟡 Handoff acionado", silenced: "🔇 IA silenciada" };
+    const titles = { success: "Turno processado com sucesso", handoff: "Handoff acionado", silenced: "IA silenciada" };
     toast("ok", titles[t.status] || "Turno processado", `${t.batch_size} mensagem(ns) → 1 turno · ${t.tools.length} ferramenta(s)`, r.ms);
     if (S.pg.queue.length) startDebounce();
   }
@@ -709,7 +713,7 @@
     const r = await api("DELETE", `/api/admin/playground/conversations/${encodeURIComponent(tenant)}/${encodeURIComponent(phone)}`);
     S.pg.chats[pgKey()] = [];
     renderChat();
-    $("#xray").innerHTML = `<div class="empty">Conversa resetada. Envie uma nova mensagem.</div>`;
+    $("#xray").innerHTML = `<div class="empty">${ico("rotate-ccw", "ico-lg")}Conversa resetada. Envie uma nova mensagem.</div>`;
     $("#xray-status").className = "chip";
     $("#xray-status").textContent = "aguardando";
     if (!silent) toast(r.ok ? "ok" : "err", r.ok ? "Conversa limpa e memória resetada" : "Falha ao resetar", r.ok ? "" : r.error, r.ms);
@@ -734,17 +738,17 @@
 
   function renderXrayError(r) {
     $("#xray-status").className = "chip chip-err";
-    $("#xray-status").textContent = "🔴 erro";
-    $("#xray").innerHTML = `<div class="notice notice-warn">🔴 ${esc(r.error)} <span class="mono small">(${esc(r.ms)} ms)</span></div>`;
+    $("#xray-status").textContent = "erro";
+    $("#xray").innerHTML = `<div class="notice notice-warn">${ico("x-circle")}${esc(r.error)} <span class="mono small">(${esc(r.ms)} ms)</span></div>`;
   }
 
   function renderXray(t) {
     const statusMap = {
-      success: ["chip-ok", "🟢 Turno processado com sucesso"],
-      handoff: ["chip-warn", "🟡 Handoff acionado"],
-      silenced: ["chip-info", "🔇 IA silenciada"],
+      success: ["chip-ok", "Turno processado com sucesso"],
+      handoff: ["chip-warn", "Handoff acionado"],
+      silenced: ["chip-info", "IA silenciada"],
     };
-    const [cls, label] = statusMap[t.status] || ["chip-err", "🔴 Erro"];
+    const [cls, label] = statusMap[t.status] || ["chip-err", "Erro"];
     $("#xray-status").className = `chip ${cls}`;
     $("#xray-status").textContent = label;
     const attrs = Object.entries(t.lead.attributes || {});
@@ -766,18 +770,18 @@
       <div class="kv">
         <div><small>Turn ID</small><strong class="mono">${esc(t.turn_id)}</strong></div>
         <div><small>Latência total</small><strong>${esc(t.latency_ms)} ms</strong></div>
-        <div><small>Motor</small><strong>${t.engine === "gemini" ? "✨ Gemini" : "⚡ Determinístico"}</strong></div>
+        <div><small>Motor</small><strong>${t.engine === "gemini" ? "Gemini" : "Determinístico"}</strong></div>
         <div><small>Estágio LangGraph</small><strong>${esc(t.stage)}</strong></div>
         <div><small>Intenção (JEV)</small><strong>${esc(t.intent)}</strong></div>
         <div><small>Lote agrupado</small><strong>${esc(t.batch_size)} msg → 1 turno</strong></div>
       </div>
-      ${t.handoff_reason ? `<div class="notice notice-warn">🤝 Handoff: <strong>${esc(t.handoff_reason)}</strong> — IA pausada para este contato (nota de CRM não é enviada no Playground).</div>` : ""}
-      ${jev ? `<div class="notice notice-info">🧠 JEV: ${esc(jev.summary || "")} <span class="muted">(confiança ${esc(Math.round((jev.confidence ?? 0) * 100))}%)</span></div>` : ""}
-      <div><h3>🔧 Ferramentas executadas (${t.tools.length})</h3><div class="list">${tools}</div></div>
-      <div><h3>🧾 Atributos extraídos do lead</h3>
+      ${t.handoff_reason ? `<div class="notice notice-warn">${ico("handshake")}Handoff: <strong>${esc(t.handoff_reason)}</strong> — IA pausada para este contato (nota de CRM não é enviada no Playground).</div>` : ""}
+      ${jev ? `<div class="notice notice-info">${ico("cpu")}JEV: ${esc(jev.summary || "")} <span class="muted">(confiança ${esc(Math.round((jev.confidence ?? 0) * 100))}%)</span></div>` : ""}
+      <div><h3>${ico("wrench")}Ferramentas executadas (${t.tools.length})</h3><div class="list">${tools}</div></div>
+      <div><h3>${ico("list")}Atributos extraídos do lead</h3>
         ${attrs.length ? `<div class="chips">${attrs.map(([k, v]) => `<span class="chip">${esc(k)}: <strong>${esc(v)}</strong></span>`).join("")}</div>` : `<div class="muted small">Nenhum atributo ainda.</div>`}
       </div>
-      <div><h3>🏷️ Tags aplicadas · status <span class="chip">${esc(t.lead.status)}</span></h3>
+      <div><h3>${ico("tag")}Tags aplicadas · status <span class="chip">${esc(t.lead.status)}</span></h3>
         ${t.lead.tags.length ? `<div class="chips">${t.lead.tags.map((x) => `<span class="chip chip-info">${esc(x)}</span>`).join("")}</div>` : `<div class="muted small">Sem tags.</div>`}
       </div>`;
   }
@@ -903,9 +907,9 @@
         <td class="num">${p.amount != null && (p.max_installments || 1) > 1 ? `${esc(p.max_installments)}x ${p.interest_free === false ? "c/ juros" : "s/ juros"}` : "—"}</td>
         <td class="num">${p.cash_amount != null ? `${esc(brl(p.cash_amount))}${pct ? `<div class="muted small">-${esc(pct)}%</div>` : ""}` : "—"}</td>
         <td>${it.in_stock === false ? `<span class="chip chip-err">sem estoque</span>` : `<span class="chip chip-ok">em estoque</span>`}${it.active === false ? ` <span class="chip">inativo</span>` : ""}</td>
-        <td class="actions"><button class="btn btn-sm" data-act="edit-item" data-i="${i}">✏️ Editar</button> <button class="btn btn-sm btn-danger" data-act="del-item" data-i="${i}">🗑️</button></td>
+        <td class="actions"><button class="btn btn-sm" data-act="edit-item" data-i="${i}">${ico("pencil")}Editar</button> <button class="btn btn-sm btn-danger btn-icon" data-act="del-item" data-i="${i}" title="Excluir item" aria-label="Excluir ${esc(it.name)}">${ico("trash")}</button></td>
       </tr>`;
-    }).join("") : `<tr><td colspan="7"><div class="empty">Catálogo vazio. Adicione o primeiro produto/serviço.</div></td></tr>`;
+    }).join("") : `<tr><td colspan="7"><div class="empty">${ico("bag", "ico-lg")}Catálogo vazio. Adicione o primeiro produto/serviço.</div></td></tr>`;
 
     const zones = d.delivery?.zones || [];
     const zoneRows = zones.map((z, i) => `<tr>
@@ -915,8 +919,8 @@
         <td style="width:90px">${inp(`delivery.zones.${i}.lead_time_days_max`, "int", 'type="number" min="0"')}</td>
         <td style="width:110px"><label class="check"><input type="checkbox" data-path="delivery.zones.${i}.business_days" data-type="bool" ${z.business_days !== false ? "checked" : ""}> úteis</label></td>
         <td>${inp(`delivery.zones.${i}.notes`, "str?", 'placeholder="observação"')}</td>
-        <td class="actions"><button class="btn btn-sm btn-danger" data-act="del-zone" data-i="${i}">🗑️</button></td>
-      </tr>`).join("") || `<tr><td colspan="7"><div class="empty">Nenhuma cidade atendida cadastrada.</div></td></tr>`;
+        <td class="actions"><button class="btn btn-sm btn-danger btn-icon" data-act="del-zone" data-i="${i}" title="Remover zona" aria-label="Remover zona de entrega">${ico("trash")}</button></td>
+      </tr>`).join("") || `<tr><td colspan="7"><div class="empty">${ico("truck", "ico-lg")}Nenhuma cidade atendida cadastrada.</div></td></tr>`;
 
     const cal = d.calendar;
     const calendarBlock = cal ? `
@@ -928,9 +932,10 @@
             <td style="width:110px">${inp(`calendar.services.${i}.duration_minutes`, "int", 'type="number" min="5" max="480"')}</td>
             <td style="width:100px">${inp(`calendar.services.${i}.capacity`, "int", 'type="number" min="1" max="50"')}</td>
             <td>${inp(`calendar.services.${i}.description`)}</td>
-            <td class="actions"><button class="btn btn-sm btn-danger" data-act="del-service" data-i="${i}">🗑️</button></td>
+            <td class="actions"><button class="btn btn-sm btn-danger btn-icon" data-act="del-service" data-i="${i}" title="Remover serviço" aria-label="Remover serviço agendável">${ico("trash")}</button></td>
           </tr>`).join("")}</tbody></table></div>
-        <button class="btn btn-sm" data-act="add-service" style="margin-top:8px">+ Serviço agendável</button>
+        <button class="btn btn-sm" data-act="add-service" style="margin-top:8px">${ico("plus")}Serviço agendável</button>
+        <h3 class="group-title">Horários e regras de agendamento</h3>
         <div class="form-grid cols-4">
           ${WEEKDAYS.map(([k, label]) => field(`${label} (HH:MM-HH:MM, separados por vírgula)`, inp(`calendar.working_hours.${k}`, "hours", 'placeholder="fechado"'))).join("")}
           ${field("Intervalo entre horários (min)", inp("calendar.slot_step_minutes", "int", 'type="number" min="5" max="240"'))}
@@ -939,27 +944,27 @@
           ${field("Datas bloqueadas (AAAA-MM-DD)", inp("calendar.blackout_dates", "csv", 'placeholder="2026-12-25, 2027-01-01"'))}
         </div>
         <button class="btn btn-sm btn-danger" data-act="disable-calendar" style="margin-top:12px">Desativar agenda</button>`
-      : `<div class="empty">Agenda desativada para este cliente. <button class="btn btn-sm btn-primary" data-act="enable-calendar">Ativar agenda</button></div>`;
+      : `<div class="empty">${ico("calendar", "ico-lg")}Agenda desativada para este cliente. <button class="btn btn-sm btn-primary" data-act="enable-calendar">${ico("calendar")}Ativar agenda</button></div>`;
 
     const planTier = t.plan_tier || "pro";
     const planSpec = PLAN_SPECS[planTier] || PLAN_SPECS.pro;
     const fSteps = ensureFollowupSteps(t);
     const catCount = items.length;
     const catMax = planSpec.max_catalog_items;
-    const catBadge = catMax ? `${catCount} / ${catMax} itens (${catCount > catMax ? "⚠️ acima do limite do plano" : "dentro do limite"})` : `${catCount} itens (Catálogo Ilimitado ✅)`;
+    const catBadge = catMax ? `${catCount} / ${catMax} itens (${catCount > catMax ? "acima do limite do plano" : "dentro do limite"})` : `${catCount} itens (catálogo ilimitado)`;
 
     const planSummaryCard = `
-      <div class="notice ${planTier === "pro" ? "notice-info" : ""}" style="margin:12px 0;padding:14px;border-radius:12px">
-        <div class="row-between" style="flex-wrap:wrap;gap:8px;margin-bottom:8px">
-          <div>
-            <strong>💎 ${esc(planSpec.name)}</strong> — <span class="mono">${esc(planSpec.price)}</span>
-            <span class="muted small">(${esc(planSpec.setup)} · ${esc(planSpec.subtitle)})</span>
+      <div class="plan-card ${planTier === "pro" ? "notice-info" : ""}">
+        <div class="plan-card-head">
+          <div class="plan-title">
+            ${ico("gem")}<strong>${esc(planSpec.name)}</strong> <span class="plan-price">${esc(planSpec.price)}</span>
+            <span class="plan-sub">${esc(planSpec.setup)} · ${esc(planSpec.subtitle)}</span>
           </div>
           <div class="chips">
-            <span class="chip chip-info">📱 Até ${esc(planSpec.max_whatsapp_numbers)} WhatsApp(s)</span>
-            <span class="chip chip-ok">💬 Franquia: ${esc((t.monthly_turn_limit || planSpec.monthly_turn_limit).toLocaleString("pt-BR"))} conversas/mês</span>
-            <span class="chip ${catMax && catCount > catMax ? "chip-err" : "chip-info"}">🛍️ ${esc(catBadge)}</span>
-            <span class="chip ${planSpec.followup_allowed ? "chip-ok" : "chip-warn"}">${planSpec.followup_allowed ? `🔄 Régua de Follow-up liberada (até ${planSpec.max_followup_steps} etapas)` : "🔒 Sem Follow-up Automático no Essencial"}</span>
+            <span class="chip chip-info">${ico("smartphone")}Até ${esc(planSpec.max_whatsapp_numbers)} WhatsApp(s)</span>
+            <span class="chip chip-ok">${ico("messages")}Franquia: <span class="num">${esc((t.monthly_turn_limit || planSpec.monthly_turn_limit).toLocaleString("pt-BR"))}</span> conversas/mês</span>
+            <span class="chip ${catMax && catCount > catMax ? "chip-err" : "chip-info"}">${ico(catMax && catCount > catMax ? "alert" : "bag")}${esc(catBadge)}</span>
+            <span class="chip ${planSpec.followup_allowed ? "chip-ok" : "chip-warn"}">${planSpec.followup_allowed ? `${ico("repeat")}Régua de follow-up liberada (até ${planSpec.max_followup_steps} etapas)` : `${ico("lock")}Sem follow-up automático no Essencial`}</span>
           </div>
         </div>
         <div class="chips">${planSpec.features.map((f) => `<span class="chip">${esc(f)}</span>`).join("")}</div>
@@ -987,25 +992,25 @@
         <td>
           <input data-path="tenant.followup_steps.${idx}.custom_message" data-type="str?" value="${esc(st.custom_message || "")}" placeholder="Automático conforme nicho/produto (ou digite usando {nome} e {empresa})">
         </td>
-        <td class="actions"><button class="btn btn-sm btn-danger" data-act="del-fu-step" data-i="${idx}" title="Remover etapa">🗑️</button></td>
+        <td class="actions"><button class="btn btn-sm btn-danger btn-icon" data-act="del-fu-step" data-i="${idx}" title="Remover etapa" aria-label="Remover etapa ${idx + 1}">${ico("trash")}</button></td>
       </tr>`;
     }).join("");
 
     const followupCard = `
-      <article class="card section">
+      <article class="card section" id="tn-sec-followup">
         <div class="card-head">
           <div>
-            <h2>🔄 Régua de Follow-up Progressiva (Recuperação de Vendas)</h2>
+            <h2>${ico("repeat")}Régua de Follow-up Progressiva (Recuperação de Vendas)</h2>
             <small class="muted">Cada etapa aguarda o tempo configurado após o envio anterior (ex.: 2h → +1 dia → +3 dias → +7 dias). Só dispara se o lead parar de responder e a IA não estiver pausada.</small>
           </div>
           <div class="chips">
-            <button class="btn btn-sm" data-act="reset-fu-steps">↺ Padrão (2h → 1d → 3d → 7d)</button>
-            <button class="btn btn-sm btn-primary" data-act="test-fu-dryrun">⚡ Simular Régua Agora</button>
+            <button class="btn btn-sm" data-act="reset-fu-steps">${ico("rotate-ccw")}Padrão (2h → 1d → 3d → 7d)</button>
+            <button class="btn btn-sm btn-primary" data-act="test-fu-dryrun">${ico("zap")}Simular régua agora</button>
           </div>
         </div>
-        ${!planSpec.followup_allowed ? `<div class="notice notice-warn" style="margin-bottom:12px">🔒 <strong>Recurso bloqueado no Plano Essencial:</strong> A Régua de Follow-up Automático está disponível a partir do <strong>Plano Pro Vendas (R$ 1.690/mês)</strong>. Altere o Plano Comercial acima para ativar.</div>` : ""}
-        ${planSpec.followup_allowed && !t.followup_enabled ? `<div class="notice notice-warn" style="margin-bottom:12px">⏸️ <strong>Régua desligada para este cliente.</strong> As etapas abaixo só são enviadas depois que você marcar a opção “Ativar Régua de Follow-up Automático” e salvar.</div>` : ""}
-        ${planSpec.followup_allowed && t.followup_enabled ? `<div class="notice notice-info" style="margin-bottom:12px">🟢 <strong>Régua ativa.</strong> O servidor verifica a cada minuto e envia pelo mesmo número em que o lead conversou. Acompanhe a fila em <a href="#engine" data-goto-tab="engine">Motor do Agente</a>.</div>` : ""}
+        ${!planSpec.followup_allowed ? `<div class="notice notice-warn" style="margin-bottom:12px">${ico("lock")}<strong>Recurso bloqueado no Plano Essencial:</strong> A Régua de Follow-up Automático está disponível a partir do <strong>Plano Pro Vendas (R$ 1.690/mês)</strong>. Altere o Plano Comercial acima para ativar.</div>` : ""}
+        ${planSpec.followup_allowed && !t.followup_enabled ? `<div class="notice notice-warn" style="margin-bottom:12px">${ico("pause")}<strong>Régua desligada para este cliente.</strong> As etapas abaixo só são enviadas depois que você marcar a opção “Ativar Régua de Follow-up Automático” e salvar.</div>` : ""}
+        ${planSpec.followup_allowed && t.followup_enabled ? `<div class="notice notice-ok" style="margin-bottom:12px">${ico("check-circle")}<strong>Régua ativa.</strong> O servidor verifica a cada minuto e envia pelo mesmo número em que o lead conversou. Acompanhe a fila em <a href="#engine" data-goto-tab="engine">Motor do Agente</a>.</div>` : ""}
         <div class="chips" style="margin-bottom:12px">
           ${chk("tenant.followup_enabled", "Ativar Régua de Follow-up Automático para leads inativos deste cliente", !planSpec.followup_allowed ? "disabled" : "")}
         </div>
@@ -1016,26 +1021,38 @@
           </table>
         </div>
         <div class="row-between" style="margin-top:10px">
-          <button class="btn btn-sm btn-success" data-act="add-fu-step" ${!planSpec.followup_allowed || fSteps.length >= (planSpec.max_followup_steps || 6) ? "disabled" : ""}>+ Adicionar Etapa na Régua</button>
-          <span id="fu-dryrun-result" class="muted small"></span>
+          <button class="btn btn-sm btn-success" data-act="add-fu-step" ${!planSpec.followup_allowed || fSteps.length >= (planSpec.max_followup_steps || 6) ? "disabled" : ""}>${ico("plus")}Adicionar etapa na régua</button>
+          <span id="fu-dryrun-result" class="muted small" role="status"></span>
         </div>
       </article>`;
 
     const segLabel = (SEGMENT_OPTIONS.find(([v]) => v === t.segment) || [t.segment, t.segment])[1];
     const l3Len = (t.custom_instructions || "").length;
     const promptCard = `
-      <article class="card section">
-        <div class="card-head"><h2>🧠 Prompt deste cliente (camadas 2 e 3)</h2><button class="btn btn-primary btn-sm" data-act="open-prompt">🧠 Ver e editar prompt</button></div>
+      <article class="card section" id="tn-sec-prompt">
+        <div class="card-head"><h2>${ico("file-text")}Prompt deste cliente (camadas 2 e 3)</h2><button class="btn btn-primary btn-sm" data-act="open-prompt">${ico("pencil")}Ver e editar prompt</button></div>
         <div class="prompt-card-layers prompt-card-layers-2">
-          <div class="layer"><strong>✏️ Camada 2 · Playbook</strong><span>${t.playbook_override ? "Personalizado para este cliente" : `Padrão do segmento: ${esc(segLabel)}`}</span></div>
-          <div class="layer"><strong>✏️ Camada 3 · Instruções da empresa</strong><span>${l3Len ? `${l3Len.toLocaleString("pt-BR")} caracteres cadastrados` : "Nenhuma instrução cadastrada"}</span></div>
+          <div class="layer"><strong>${ico("pencil")}Camada 2 · Playbook</strong><span>${t.playbook_override ? "Personalizado para este cliente" : `Padrão do segmento: ${esc(segLabel)}`}</span></div>
+          <div class="layer"><strong>${ico("pencil")}Camada 3 · Instruções da empresa</strong><span>${l3Len ? `${l3Len.toLocaleString("pt-BR")} caracteres cadastrados` : "Nenhuma instrução cadastrada"}</span></div>
         </div>
         <p class="muted small" style="margin-top:10px">As alterações pedem confirmação, valem na hora para as conversas reais e a versão anterior fica no histórico. As regras globais (Kernel) ficam na aba <a href="#engine" data-goto-tab="engine">Motor do Agente</a>.</p>
       </article>`;
 
+    const sectionNav = [
+      ["tn-sec-geral", "settings", "Geral & plano"],
+      ["tn-sec-prompt", "file-text", "Prompt"],
+      ["tn-sec-followup", "repeat", "Follow-up"],
+      ["tn-sec-catalogo", "bag", "Catálogo"],
+      ["tn-sec-entregas", "truck", "Entregas"],
+      ["tn-sec-negocio", "store", "Negócio"],
+      ["tn-sec-agenda", "calendar", "Agenda"],
+    ].map(([id, icon, label]) => `<button type="button" class="section-link" data-scroll-to="${id}">${ico(icon)}${esc(label)}</button>`).join("");
+
     $("#tn-editor").innerHTML = `
-      <article class="card">
-        <div class="card-head"><h2>⚙️ Configurações gerais &amp; Plano Comercial</h2>${d.demo_data ? `<span class="chip tag-demo">DADOS DE DEMONSTRAÇÃO</span>` : `<span class="chip chip-ok">dados reais</span>`}</div>
+      <nav class="section-nav" aria-label="Seções do cliente"><span class="section-nav-label">Ir para</span>${sectionNav}</nav>
+      <article class="card" id="tn-sec-geral">
+        <div class="card-head"><h2>${ico("settings")}Configurações gerais &amp; Plano Comercial</h2>${d.demo_data ? `<span class="chip tag-demo">DADOS DE DEMONSTRAÇÃO</span>` : `<span class="chip chip-ok">dados reais</span>`}</div>
+        <h3 class="group-title">Identificação e plano</h3>
         <div class="form-grid cols-4">
           ${field("tenant_id", `<input value="${esc(t.tenant_id)}" disabled>`)}
           ${field("Nome de exibição", inp("tenant.display_name"), "span-2")}
@@ -1044,24 +1061,27 @@
           ${field("Plano Comercial", selPairs("tenant.plan_tier", PLAN_OPTIONS, "pro", 'data-act="plan-tier"'), "span-2")}
           ${field("Franquia mensal (conversas/mês)", inp("tenant.monthly_turn_limit", "int?", 'type="number" min="100" placeholder="2500"'))}
           ${field("Fuso horário", inp("tenant.timezone", "str", 'placeholder="America/Belem"'))}
+        </div>
+        ${planSummaryCard}
+        <h3 class="group-title">WhatsApp, CRM e modelo de IA</h3>
+        <div class="form-grid cols-4">
           ${field("Provedor WhatsApp", sel("tenant.whatsapp_provider", ["waha", "astracalls"]))}
           ${field("Sessão WhatsApp", inp("tenant.whatsapp_session_id", "str?", 'placeholder="ex.: Danyllo"'))}
           ${field("CRM Nativo", sel("tenant.crm_provider", ["chatwoot", "ghl", "none"], 'data-act="crm-provider"'))}
-          ${field("Modelo de IA", selPairs("tenant.llm_model", LLM_MODEL_OPTIONS, "gemini-3.8-flash"), "span-2")}
+          ${field("Modelo de IA", selPairs("tenant.llm_model", LLM_MODEL_OPTIONS, "gemini-3.8-flash"))}
           ${field("Chave HMAC / Secret do Webhook", inp("tenant.webhook_secret", "str?", 'placeholder="opcional (sobrescreve .env)"'), "span-2")}
-          <label class="field span-2">
-            <span>⏱️ Silêncio para fechar o lote (debounce): <strong id="tn-silence-val" class="mono">${esc(t.debounce_silence_seconds ?? S.overview?.debounce?.silence_seconds ?? 8)}s</strong></span>
+          <label class="field">
+            <span class="row-between"><span>Silêncio para fechar o lote</span><strong id="tn-silence-val" class="mono num-badge">${esc(t.debounce_silence_seconds ?? S.overview?.debounce?.silence_seconds ?? 8)}s</strong></span>
             <input type="range" data-path="tenant.debounce_silence_seconds" data-type="num?" min="2" max="30" step="1" value="${esc(t.debounce_silence_seconds ?? S.overview?.debounce?.silence_seconds ?? 8)}">
           </label>
-          <label class="field span-2">
-            <span>⏳ Teto máximo da janela de espera: <strong id="tn-max-window-val" class="mono">${esc(t.debounce_max_window_seconds ?? S.overview?.debounce?.max_window_seconds ?? 20)}s</strong></span>
+          <label class="field">
+            <span class="row-between"><span>Teto da janela de espera</span><strong id="tn-max-window-val" class="mono num-badge">${esc(t.debounce_max_window_seconds ?? S.overview?.debounce?.max_window_seconds ?? 20)}s</strong></span>
             <input type="range" data-path="tenant.debounce_max_window_seconds" data-type="num?" min="5" max="60" step="1" value="${esc(t.debounce_max_window_seconds ?? S.overview?.debounce?.max_window_seconds ?? 20)}">
           </label>
         </div>
-        ${planSummaryCard}
-        <div class="chips" style="margin-top:12px">${chk("tenant.active", "Cliente ativo (webhook atende)")}${chk("tenant.split_messages", "Ativar Envio Humanizado em Partes (picotar mensagens longas)")}${chk("demo_data", "Dados de demonstração (demo_data)")}</div>
+        <div class="check-grid">${chk("tenant.active", "Cliente ativo (webhook atende)")}${chk("tenant.split_messages", "Envio humanizado em partes (picotar mensagens longas)")}${chk("demo_data", "Dados de demonstração (demo_data)")}</div>
         <div class="divider"></div>
-        <h3>🔌 CRM (${esc(t.crm_provider)}) &amp; Conectores Externos via API (ERP / Bling / Asaas / n8n)</h3>
+        <h3>${ico("plug")}CRM (${esc(t.crm_provider)}) &amp; Conectores Externos via API (ERP / Bling / Asaas / n8n)</h3>
         ${crmBlock}
         <div class="form-grid cols-3" style="margin-top:12px">
           ${field("Webhook de Saída / API Externa (ERP, n8n, Make, Asaas)", inp("tenant.external_webhook_url", "str?", 'placeholder="https://seu-erp-ou-n8n.com/webhook/lobo"'), "span-2")}
@@ -1073,29 +1093,29 @@
 
       ${followupCard}
 
-      <article class="card section">
-        <div class="card-head"><h2>🛍️ Catálogo &amp; Preços</h2><button class="btn btn-success btn-sm" data-act="new-item">+ Novo Produto/Serviço</button></div>
+      <article class="card section" id="tn-sec-catalogo">
+        <div class="card-head"><h2>${ico("bag")}Catálogo &amp; Preços</h2><button class="btn btn-success btn-sm" data-act="new-item">${ico("plus")}Novo produto/serviço</button></div>
         <div class="table-wrap"><table class="table">
           <thead><tr><th>Código</th><th>Nome / categoria</th><th class="num">Preço</th><th class="num">Parcelas</th><th class="num">À vista</th><th>Estoque</th><th></th></tr></thead>
           <tbody>${catalogRows}</tbody>
         </table></div>
         <div class="form-grid cols-3">
           ${field("Validade máxima do preço (dias)", inp("catalog.price_max_age_days", "int?", 'type="number" min="1" placeholder="sem validade"'))}
-          <label class="field span-2"><span>Sinônimos de busca (um por linha — termo: sinônimo1, sinônimo2)</span>
-            <textarea id="tn-synonyms" rows="4" class="mono" placeholder="casal: 138x188, duplo">${esc(synonymsText())}</textarea></label>
+          <label class="field span-2"><span>Sinônimos de busca</span>
+            <textarea id="tn-synonyms" rows="4" class="mono" placeholder="casal: 138x188, duplo">${esc(synonymsText())}</textarea><small class="hint">Um por linha, no formato <code>termo: sinônimo1, sinônimo2</code>.</small></label>
         </div>
       </article>
 
-      <article class="card section">
-        <div class="card-head"><h2>🚚 Entregas / Frete por cidade</h2><button class="btn btn-success btn-sm" data-act="add-zone">+ Adicionar cidade/zona</button></div>
+      <article class="card section" id="tn-sec-entregas">
+        <div class="card-head"><h2>${ico("truck")}Entregas / Frete por cidade</h2><button class="btn btn-success btn-sm" data-act="add-zone">${ico("plus")}Adicionar cidade/zona</button></div>
         <div class="table-wrap"><table class="table">
           <thead><tr><th>Cidades</th><th>Frete (R$)</th><th>Prazo mín.</th><th>Prazo máx.</th><th>Dias</th><th>Observação</th><th></th></tr></thead>
           <tbody>${zoneRows}</tbody>
         </table></div>
       </article>
 
-      <article class="card section">
-        <div class="card-head"><h2>🏪 Informações do negócio</h2></div>
+      <article class="card section" id="tn-sec-negocio">
+        <div class="card-head"><div><h2>${ico("store")}Informações do negócio</h2><small class="muted">Usadas pela IA para responder sobre endereço, horários, garantia e pagamento.</small></div></div>
         <div class="form-grid cols-2">
           ${field("Endereço / localização", `<textarea data-path="business_info.location" data-type="del" rows="2">${esc(val("business_info.location") || "")}</textarea>`)}
           ${field("Horário de funcionamento", `<textarea data-path="business_info.hours" data-type="del" rows="2">${esc(val("business_info.hours") || "")}</textarea>`)}
@@ -1104,8 +1124,8 @@
         </div>
       </article>
 
-      <article class="card section">
-        <div class="card-head"><h2>📅 Agenda &amp; serviços agendáveis</h2></div>
+      <article class="card section" id="tn-sec-agenda">
+        <div class="card-head"><h2>${ico("calendar")}Agenda &amp; serviços agendáveis</h2></div>
         ${calendarBlock}
       </article>`;
   }
@@ -1182,7 +1202,7 @@
       }
       setDirty(true);
       renderTenant();
-      toast("ok", `💎 ${spec.name} selecionado`, `${spec.price} · Franquia ajustada para ${spec.monthly_turn_limit.toLocaleString("pt-BR")} conversas/mês`);
+      toast("ok", `${spec.name} selecionado`, `${spec.price} · Franquia ajustada para ${spec.monthly_turn_limit.toLocaleString("pt-BR")} conversas/mês`);
     } else if (el.dataset.fuUnit !== undefined) {
       renderTenant();
     }
@@ -1220,8 +1240,8 @@
         const outEl = $("#fu-dryrun-result");
         if (r.ok && outEl) {
           outEl.innerHTML = r.data.eligible_count > 0
-            ? `🟢 <strong>${r.data.eligible_count} contato(s)</strong> receberiam follow-up agora: <em>"${esc(r.data.eligible[0].message.slice(0, 110))}…"</em>`
-            : `ℹ️ <strong>${r.data.evaluated} conversa(s) avaliada(s)</strong> — nenhum lead aguardando retorno neste momento.`;
+            ? `<span class="text-ok">${ico("check-circle")}</span> <strong>${r.data.eligible_count} contato(s)</strong> receberiam follow-up agora: <em>"${esc(r.data.eligible[0].message.slice(0, 110))}…"</em>`
+            : `${ico("info")} <strong>${r.data.evaluated} conversa(s) avaliada(s)</strong> — nenhum lead aguardando retorno neste momento.`;
         }
         return;
       }
@@ -1323,7 +1343,7 @@
       <div class="list-item">
         <div class="grow"><strong>${esc(r.saved_at ? new Date(r.saved_at).toLocaleString("pt-BR") : r.revision)}</strong>
           <div class="muted small">Camada 2: ${r.playbook_override ? `personalizada (${r.playbook_override.length} car.)` : "padrão do segmento"} · Camada 3: ${r.custom_instructions ? `${r.custom_instructions.length} car.` : "vazia"}</div></div>
-        <button class="btn btn-sm" data-pr-rev="${i}">⤴ Carregar no editor</button>
+        <button class="btn btn-sm" data-pr-rev="${i}">${ico("upload")}Carregar no editor</button>
       </div>`).join("");
   }
   function applyPromptState(state) {
@@ -1590,7 +1610,7 @@
         <div class="conv-head">
           <div class="conv-avatar">${initial}</div>
           <div class="grow" style="flex:1;min-width:0"><strong>${esc(c.name || "Sem nome")}</strong><div class="muted small mono">${esc(c.phone)}</div></div>
-          ${c.ai_paused ? `<span class="chip chip-warn">⏸️ IA pausada</span>` : `<span class="chip chip-ok">🟢 IA ativa</span>`}
+          ${c.ai_paused ? `<span class="chip chip-warn">IA pausada</span>` : `<span class="chip chip-ok">IA ativa</span>`}
         </div>
         <div class="chips">
           <span class="chip">${esc(tenantSummary(c.tenant_id)?.display_name || c.tenant_id)}</span>
@@ -1599,16 +1619,16 @@
           ${c.source ? `<span class="chip">origem: ${esc(c.source)}</span>` : ""}
         </div>
         ${attrs.length ? `<div class="muted small">${attrs.map(([k, v]) => `${esc(k)}: <strong>${esc(v)}</strong>`).join(" · ")}</div>` : ""}
-        ${c.last_message ? `<div class="conv-last">${c.last_role === "ia" ? "🤖" : "👤"} ${esc(c.last_message)}</div>` : ""}
+        ${c.last_message ? `<div class="conv-last"><span title="${c.last_role === "ia" ? "Última mensagem: IA" : "Última mensagem: lead"}">${ico(c.last_role === "ia" ? "bot" : "user")}</span><span>${esc(c.last_message)}</span></div>` : ""}
         ${c.ai_paused && c.pause ? `<div class="muted small">Motivo: <strong>${esc(c.pause.reason)}</strong>${until ? ` · até ${esc(until)}` : ""}</div>` : ""}
-        <div class="row-between"><span class="muted small">${esc(c.message_count)} msg · ${esc(relTime(c.last_interaction_at))}</span>
+        <div class="row-between"><span class="muted small"><span class="num">${esc(c.message_count)}</span> msg · ${esc(relTime(c.last_interaction_at))}</span>
           <div class="conv-actions">
-            ${c.ai_paused ? `<button class="btn btn-success btn-sm" data-cv="resume" data-i="${i}">🔄 Reativar IA</button>`
-              : `<button class="btn btn-sm" data-cv="pause" data-i="${i}">⏸️ Pausar IA Manualmente</button>`}
-            <button class="btn btn-ghost btn-sm" data-cv="reset" data-i="${i}" title="Apagar memória da conversa">🧹 Resetar</button>
+            ${c.ai_paused ? `<button class="btn btn-success btn-sm" data-cv="resume" data-i="${i}">${ico("play")}Reativar IA</button>`
+              : `<button class="btn btn-sm" data-cv="pause" data-i="${i}">${ico("pause")}Pausar IA</button>`}
+            <button class="btn btn-ghost btn-sm" data-cv="reset" data-i="${i}" title="Apagar memória da conversa">${ico("rotate-ccw")}Resetar</button>
           </div></div>
       </article>`;
-    }).join("") : `<div class="empty">Nenhuma conversa real ainda. Elas aparecem aqui quando contatos liberados pelo Sandbox falam com o agente.</div>`;
+    }).join("") : `<div class="empty">${ico("users", "ico-lg")}Nenhuma conversa real ainda. Elas aparecem aqui quando contatos liberados pelo Sandbox falam com o agente.</div>`;
     $("#cv-list").dataset.items = JSON.stringify(list.map((c) => [c.tenant_id, c.phone]));
   }
   $("#btn-cv-refresh").addEventListener("click", (ev) => loadConversations(ev.currentTarget));
@@ -1620,11 +1640,11 @@
     if (!tenant) return;
     const base = `/api/admin/conversations/${encodeURIComponent(tenant)}/${encodeURIComponent(phone)}`;
     let r;
-    if (btn.dataset.cv === "resume") r = await act(btn, "🔄 IA reativada", () => api("POST", `${base}/resume`), { okMsg: (d) => (d.crm_synced ? "Pausa removida e tag removida no CRM." : "Pausa e tag atendimento_humano removidas.") });
-    else if (btn.dataset.cv === "pause") r = await act(btn, "⏸️ IA pausada manualmente", () => api("POST", `${base}/pause`, {}), { okMsg: phone });
+    if (btn.dataset.cv === "resume") r = await act(btn, "IA reativada", () => api("POST", `${base}/resume`), { okMsg: (d) => (d.crm_synced ? "Pausa removida e tag removida no CRM." : "Pausa e tag atendimento_humano removidas.") });
+    else if (btn.dataset.cv === "pause") r = await act(btn, "IA pausada manualmente", () => api("POST", `${base}/pause`, {}), { okMsg: phone });
     else {
       if (!confirm("Apagar memória/histórico deste contato e reativar a IA?")) return;
-      r = await act(btn, "🧹 Conversa resetada", () => api("DELETE", base), { okMsg: phone });
+      r = await act(btn, "Conversa resetada", () => api("DELETE", base), { okMsg: phone });
     }
     if (r.ok) loadConversations();
   });
@@ -1641,23 +1661,23 @@
     const trigger = r.data.trigger_keywords?.[0] || "/lobo-sales-agent";
     $("#wh-trigger-example").textContent = `${trigger} Olá`;
     $("#wh-ttl").textContent = S.sandbox?.config.session_ttl_minutes ?? 30;
-    const urlCell = (path) => `<div class="row-between"><span class="url">${esc(origin + path)}</span><button class="btn btn-sm" data-copy="${esc(origin + path)}">📋 Copiar</button></div>`;
+    const urlCell = (path) => `<div class="row-between"><span class="url">${esc(origin + path)}</span><button class="btn btn-sm" data-copy="${esc(origin + path)}">${ico("copy")}Copiar</button></div>`;
     $("#wh-table").innerHTML = `<thead><tr><th>Cliente</th><th>Canal &amp; Sessão</th><th>WAHA</th><th>AstraCalls</th><th>HMAC / Secret &amp; Ações</th></tr></thead><tbody>${
       r.data.tenants.map((t) => `<tr data-wh-tenant="${esc(t.tenant_id)}">
         <td><strong>${esc(t.display_name)}</strong><div class="muted small mono">${esc(t.tenant_id)}</div></td>
         <td style="min-width:190px">
-          <select data-wh="provider" class="wh-input" style="margin-bottom:4px">
+          <select data-wh="provider" class="wh-input" style="margin-bottom:4px" aria-label="Provedor de WhatsApp de ${esc(t.display_name)}">
             <option value="waha" ${t.whatsapp_provider === "waha" ? "selected" : ""}>waha</option>
             <option value="astracalls" ${t.whatsapp_provider === "astracalls" ? "selected" : ""}>astracalls</option>
           </select>
-          <input data-wh="session" value="${esc(t.whatsapp_session_id || "")}" placeholder="sessão (ex.: Danyllo)">
+          <input data-wh="session" value="${esc(t.whatsapp_session_id || "")}" placeholder="sessão (ex.: Danyllo)" aria-label="Sessão de WhatsApp de ${esc(t.display_name)}">
         </td>
         <td style="min-width:260px">${urlCell(t.paths.waha)}</td>
         <td style="min-width:260px">${urlCell(t.paths.astracalls)}</td>
         <td style="min-width:230px">
-          <div class="row-between" style="gap:6px">
-            <input data-wh="secret" type="password" value="${esc(t.webhook_secret_masked || "")}" placeholder="HMAC Secret (opcional)">
-            <button class="btn btn-primary btn-sm" data-save-wh="${esc(t.tenant_id)}">💾 Salvar</button>
+          <div class="row-between" style="gap:6px;flex-wrap:nowrap">
+            <input data-wh="secret" type="password" value="${esc(t.webhook_secret_masked || "")}" placeholder="HMAC Secret (opcional)" aria-label="HMAC Secret de ${esc(t.display_name)}">
+            <button class="btn btn-primary btn-sm" data-save-wh="${esc(t.tenant_id)}">${ico("save")}Salvar</button>
           </div>
         </td>
       </tr>`).join("")}</tbody>`;
@@ -1691,7 +1711,7 @@
       const ok = document.execCommand("copy"); ta.remove();
       if (!ok) { toast("err", "Não foi possível copiar", text); return; }
     }
-    toast("ok", "📋 URL copiada", text);
+    toast("ok", "URL copiada", text);
   });
 
   function syncSendTenant() {
@@ -1712,12 +1732,32 @@
       session_id: $("#ts-session").value.trim() || null,
     };
     if (!confirm(`Enviar uma mensagem REAL pelo ${body.provider.toUpperCase()} para ${phone}?`)) return;
-    const r = await act(ev.submitter, "📲 Mensagem enviada pelo gateway", () => api("POST", "/api/admin/gateway/test-send", body),
+    const r = await act(ev.submitter, "Mensagem enviada pelo gateway", () => api("POST", "/api/admin/gateway/test-send", body),
       { okMsg: (d) => `${d.provider.toUpperCase()} · sessão ${d.session_id} · id ${d.message_id || "—"}`, errTitle: "Gateway recusou o envio" });
     $("#ts-result").innerHTML = r.ok
-      ? `🟢 <strong>Sucesso</strong> — ${esc(r.data.provider)} / ${esc(r.data.session_id)} · id <span class="mono">${esc(r.data.message_id || "—")}</span> · ${esc(r.ms)} ms`
-      : `🔴 <strong>Erro</strong> — ${esc(r.error)} · ${esc(r.ms)} ms`;
+      ? `<span class="text-ok">${ico("check-circle")}</span> <strong>Sucesso</strong> — ${esc(r.data.provider)} / ${esc(r.data.session_id)} · id <span class="mono">${esc(r.data.message_id || "—")}</span> · <span class="num">${esc(r.ms)} ms</span>`
+      : `<span class="text-err">${ico("x-circle")}</span> <strong>Erro</strong> — ${esc(r.error)} · <span class="num">${esc(r.ms)} ms</span>`;
   });
+
+  // ------------------------------------------------------------------ apresentação (somente visual/acessibilidade)
+  // Atalhos "Ir para" no editor de clientes: rolam até a seção sem alterar o #hash da aba.
+  document.addEventListener("click", (ev) => {
+    const link = ev.target.closest("[data-scroll-to]");
+    if (!link) return;
+    const target = document.getElementById(link.dataset.scrollTo);
+    if (!target) return;
+    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    target.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+  });
+  // Mantém aria-current na navegação principal espelhando a classe .active (definida por activateTab).
+  const syncNavAria = () => $$(".tab").forEach((t) => {
+    if (t.classList.contains("active")) t.setAttribute("aria-current", "page"); else t.removeAttribute("aria-current");
+  });
+  if (window.MutationObserver) {
+    const navObserver = new MutationObserver(syncNavAria);
+    $$(".tab").forEach((t) => navObserver.observe(t, { attributes: true, attributeFilter: ["class"] }));
+  }
+  syncNavAria();
 
   // ------------------------------------------------------------------ boot
   window.addEventListener("beforeunload", (ev) => { if (S.dirty) { ev.preventDefault(); ev.returnValue = ""; } });

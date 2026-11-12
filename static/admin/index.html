@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="pt-BR" data-theme="dark">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -13,11 +14,12 @@
         var t = localStorage.getItem("lobo_theme");
         if (!t) t = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
         document.documentElement.setAttribute("data-theme", t);
-      } catch (e) {}
+      } catch (e) { }
     })();
   </script>
   <link rel="stylesheet" href="/static/admin/app.css?v=0.7.0">
 </head>
+
 <body>
   <header class="topbar">
     <div class="brand">
@@ -34,16 +36,20 @@
       <span id="version-badge" class="badge badge-ghost">v…</span>
     </div>
     <div class="topbar-actions">
-      <button id="btn-auth" class="icon-btn" title="Token de administrador" aria-label="Token de administrador">🔑</button>
-      <button id="btn-theme" class="icon-btn theme-toggle" title="Alternar tema claro/escuro" aria-label="Alternar tema">
+      <button id="btn-auth" class="icon-btn" title="Token de administrador"
+        aria-label="Token de administrador">🔑</button>
+      <button id="btn-theme" class="icon-btn theme-toggle" title="Alternar tema claro/escuro"
+        aria-label="Alternar tema">
         <span class="sun">☀️</span><span class="moon">🌙</span>
       </button>
     </div>
   </header>
 
   <div id="auth-warning" class="banner banner-warning hidden">
-    ⚠️ <strong>Painel sem senha.</strong> Qualquer pessoa com o link pode editar preços, abrir o Sandbox e disparar mensagens.
-    Defina <code>ADMIN_TOKEN</code> nas variáveis de ambiente do Easypanel (em produção o painel fica bloqueado sem ele).
+    ⚠️ <strong>Painel sem senha.</strong> Qualquer pessoa com o link pode editar preços, abrir o Sandbox e disparar
+    mensagens.
+    Defina <code>ADMIN_TOKEN</code> nas variáveis de ambiente do Easypanel (em produção o painel fica bloqueado sem
+    ele).
   </div>
 
   <nav class="tabs" role="tablist">
@@ -64,7 +70,10 @@
             <h2>🔒 Kernel global do agente (Camada 1)</h2>
             <span class="chip chip-lock" id="kn-meta">somente leitura</span>
           </div>
-          <p class="muted small">Regras que valem para <strong>todos os clientes</strong>: identidade humana, uso correto das ferramentas e anti-alucinação. Ficam no código (versionadas) e não dependem de nenhum cliente. O playbook do segmento (Camada 2) e as instruções da empresa (Camada 3) são editados dentro de cada cliente.</p>
+          <p class="muted small">Regras que valem para <strong>todos os clientes</strong>: identidade humana, uso
+            correto das ferramentas e anti-alucinação. Ficam no código (versionadas) e não dependem de nenhum cliente. O
+            playbook do segmento (Camada 2) e as instruções da empresa (Camada 3) são editados dentro de cada cliente.
+          </p>
           <div class="chips" id="kn-blocks"></div>
           <pre id="kn-text" class="prompt-pre prompt-pre-tall">Carregando…</pre>
         </article>
@@ -75,7 +84,9 @@
           </div>
           <div id="fu-sched-body" class="small"></div>
           <div class="divider"></div>
-          <div class="row-between"><h3>Próximos toques</h3><button class="btn btn-sm" id="fu-sched-refresh">↻ Atualizar</button></div>
+          <div class="row-between">
+            <h3>Próximos toques</h3><button class="btn btn-sm" id="fu-sched-refresh">↻ Atualizar</button>
+          </div>
           <div id="fu-queue" class="list"></div>
         </article>
       </div>
@@ -97,7 +108,8 @@
             </span>
           </label>
           <div id="sandbox-forced" class="notice notice-info hidden">
-            🔒 Ambiente <code id="sandbox-env"></code>: a trava fica <strong>sempre ativa</strong> fora de produção, independente do switch.
+            🔒 Ambiente <code id="sandbox-env"></code>: a trava fica <strong>sempre ativa</strong> fora de produção,
+            independente do switch.
           </div>
 
           <div class="form-grid cols-3">
@@ -125,11 +137,13 @@
               </select>
             </label>
             <label class="field">
-              <span class="row-between"><span>Tempo de Silêncio do Debounce</span><strong id="sandbox-silence-val" class="mono">8s</strong></span>
+              <span class="row-between"><span>Tempo de Silêncio do Debounce</span><strong id="sandbox-silence-val"
+                  class="mono">8s</strong></span>
               <input id="sandbox-silence" type="range" min="2" max="30" step="1" value="8">
             </label>
             <label class="field">
-              <span class="row-between"><span>Janela Máxima de Coleta</span><strong id="sandbox-max-window-val" class="mono">20s</strong></span>
+              <span class="row-between"><span>Janela Máxima de Coleta</span><strong id="sandbox-max-window-val"
+                  class="mono">20s</strong></span>
               <input id="sandbox-max-window" type="range" min="5" max="60" step="1" value="20">
             </label>
             <div class="field field-action">
@@ -181,7 +195,8 @@
               </select>
             </label>
             <label class="field"><span>Nome do lead</span><input id="pg-name" value="Lead Playground"></label>
-            <label class="field"><span>Telefone</span><input id="pg-phone" value="5591900000001" inputmode="numeric"></label>
+            <label class="field"><span>Telefone</span><input id="pg-phone" value="5591900000001"
+                inputmode="numeric"></label>
           </div>
           <div class="scenarios">
             <button class="btn btn-chip" data-scenario="mattress">🛏️ 3 Mensagens (Colchão + Belém)</button>
@@ -193,7 +208,8 @@
             <div class="wa-head">
               <div class="wa-avatar">🐺</div>
               <div><strong id="pg-chat-title">…</strong><small id="pg-chat-sub" class="muted">online</small></div>
-              <button class="btn btn-ghost btn-sm wa-reset" id="btn-pg-reset" title="Limpar e resetar conversa">🗑️ Limpar</button>
+              <button class="btn btn-ghost btn-sm wa-reset" id="btn-pg-reset" title="Limpar e resetar conversa">🗑️
+                Limpar</button>
             </div>
             <div class="wa-body" id="pg-chat"></div>
             <div class="debounce" id="pg-debounce">
@@ -207,15 +223,19 @@
             </form>
             <div class="wa-options">
               <label class="check"><input type="checkbox" id="pg-immediate"> Lote imediato (sem debounce)</label>
-              <label class="check">Silêncio <input id="pg-silence" type="number" min="1" max="30" step="0.5" value="4"> s</label>
+              <label class="check">Silêncio <input id="pg-silence" type="number" min="1" max="30" step="0.5" value="4">
+                s</label>
             </div>
           </div>
         </article>
 
         <article class="card xray">
-          <div class="card-head"><h2>🩻 Raio-X do Turno</h2><span id="xray-status" class="chip">aguardando</span></div>
+          <div class="card-head">
+            <h2>🩻 Raio-X do Turno</h2><span id="xray-status" class="chip">aguardando</span>
+          </div>
           <div id="xray" class="xray-body">
-            <div class="empty">Envie mensagens no simulador para ver estágio do LangGraph, intenção do JEV, ferramentas executadas (argumentos + JSON) e atributos extraídos.</div>
+            <div class="empty">Envie mensagens no simulador para ver estágio do LangGraph, intenção do JEV, ferramentas
+              executadas (argumentos + JSON) e atributos extraídos.</div>
           </div>
         </article>
       </div>
@@ -242,7 +262,9 @@
     <!-- ================================================================ ABA 4 -->
     <section id="tab-conversations" class="pane">
       <div class="toolbar">
-        <label class="field inline"><span>Cliente</span><select id="cv-tenant"><option value="">Todos</option></select></label>
+        <label class="field inline"><span>Cliente</span><select id="cv-tenant">
+            <option value="">Todos</option>
+          </select></label>
         <button class="btn btn-ghost" id="btn-cv-refresh">↻ Atualizar</button>
         <label class="check"><input type="checkbox" id="cv-auto" checked> Atualizar a cada 10s</label>
         <span class="spacer"></span>
@@ -255,28 +277,41 @@
     <section id="tab-webhooks" class="pane">
       <div class="grid grid-webhooks">
         <article class="card span-all">
-          <div class="card-head"><h2>URLs de Webhook</h2><small class="muted" id="wh-base"></small></div>
-          <div class="table-wrap"><table class="table" id="wh-table"></table></div>
+          <div class="card-head">
+            <h2>URLs de Webhook</h2><small class="muted" id="wh-base"></small>
+          </div>
+          <div class="table-wrap">
+            <table class="table" id="wh-table"></table>
+          </div>
         </article>
         <article class="card">
           <h2>📲 Teste rápido no celular</h2>
           <ol class="steps">
-            <li>Configure no WAHA/AstraCalls a URL do cliente acima (evento <code>message</code>; opcional <code>message.any</code> para detectar o atendente).</li>
-            <li>De qualquer celular, envie <code id="wh-trigger-example">/lobo-sales-agent Olá</code> para o número conectado — isso libera uma sessão de teste de <strong id="wh-ttl">30</strong> min só para aquele contato.</li>
+            <li>Configure no WAHA/AstraCalls a URL do cliente acima (evento <code>message</code>; opcional
+              <code>message.any</code> para detectar o atendente).</li>
+            <li>De qualquer celular, envie <code id="wh-trigger-example">/lobo-sales-agent Olá</code> para o número
+              conectado — isso libera uma sessão de teste de <strong id="wh-ttl">30</strong> min só para aquele contato.
+            </li>
             <li>Ou libere seu número na Aba 🛡️ (whitelist). Para recomeçar do zero, envie <code>/reset</code>.</li>
           </ol>
-          <div class="notice notice-info">🔒 Mensagens normais de clientes reais são <strong>ignoradas em silêncio</strong> enquanto o Sandbox estiver ativo.</div>
+          <div class="notice notice-info">🔒 Mensagens normais de clientes reais são <strong>ignoradas em
+              silêncio</strong> enquanto o Sandbox estiver ativo.</div>
         </article>
         <article class="card">
           <h2>🚀 Testar envio via Gateway</h2>
           <form id="form-send" class="form-grid cols-2">
             <label class="field"><span>Cliente</span><select id="ts-tenant" class="tenant-select"></select></label>
             <label class="field"><span>Provedor</span>
-              <select id="ts-provider"><option value="waha">WAHA</option><option value="astracalls">AstraCalls</option></select>
+              <select id="ts-provider">
+                <option value="waha">WAHA</option>
+                <option value="astracalls">AstraCalls</option>
+              </select>
             </label>
             <label class="field"><span>Sessão</span><input id="ts-session" placeholder="padrão do cliente"></label>
-            <label class="field"><span>Telefone de destino</span><input id="ts-phone" inputmode="numeric" placeholder="5591988887777" required></label>
-            <label class="field span-2"><span>Mensagem</span><textarea id="ts-text" rows="3" maxlength="1000">✅ Teste de envio do painel Lobo AI Sales Agent.</textarea></label>
+            <label class="field"><span>Telefone de destino</span><input id="ts-phone" inputmode="numeric"
+                placeholder="5591988887777" required></label>
+            <label class="field span-2"><span>Mensagem</span><textarea id="ts-text" rows="3"
+                maxlength="1000">✅ Teste de envio do painel Lobo AI Sales Agent.</textarea></label>
             <div class="field span-2 row-between">
               <span id="ts-result" class="muted small"></span>
               <button class="btn btn-primary" type="submit">Enviar mensagem real</button>
@@ -290,24 +325,36 @@
   <!-- Modal: item do catálogo -->
   <dialog id="dlg-item" class="modal">
     <form method="dialog" id="form-item" class="modal-body">
-      <div class="card-head"><h2 id="dlg-item-title">Produto / Serviço</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Fechar">✕</button></div>
+      <div class="card-head">
+        <h2 id="dlg-item-title">Produto / Serviço</h2><button class="icon-btn" value="cancel" formnovalidate
+          aria-label="Fechar">✕</button>
+      </div>
       <div class="form-grid cols-3">
         <label class="field"><span>Código (item_id)</span><input name="item_id" required maxlength="64"></label>
         <label class="field span-2"><span>Nome</span><input name="name" required></label>
-        <label class="field"><span>Categoria</span><input name="category" required placeholder="colchao, servico…"></label>
+        <label class="field"><span>Categoria</span><input name="category" required
+            placeholder="colchao, servico…"></label>
         <label class="field span-2"><span>Tags (separadas por vírgula)</span><input name="tags"></label>
         <label class="field span-3"><span>Descrição</span><textarea name="description" rows="2"></textarea></label>
-        <label class="field span-3"><span>Atributos (um por linha: chave: valor)</span><textarea name="attributes" rows="3" placeholder="tamanho: casal&#10;medidas: 138x188x30 cm"></textarea></label>
-        <label class="field"><span>Preço (R$)</span><input name="amount" inputmode="decimal" placeholder="2899,00"></label>
-        <label class="field"><span>Máx. parcelas</span><input name="max_installments" type="number" min="1" max="24" value="1"></label>
-        <label class="field"><span>% desconto à vista</span><input name="cash_pct" inputmode="decimal" placeholder="5"></label>
-        <label class="field"><span>Preço à vista (R$)</span><input name="cash_amount" inputmode="decimal" placeholder="calculado"></label>
-        <label class="field span-2"><span>Observação do preço</span><input name="note" placeholder="ex.: instalação não inclusa"></label>
-        <label class="check"><input type="checkbox" name="on_request"> Preço sob consulta (IA transfere para humano)</label>
+        <label class="field span-3"><span>Atributos (um por linha: chave: valor)</span><textarea name="attributes"
+            rows="3" placeholder="tamanho: casal&#10;medidas: 138x188x30 cm"></textarea></label>
+        <label class="field"><span>Preço (R$)</span><input name="amount" inputmode="decimal"
+            placeholder="2899,00"></label>
+        <label class="field"><span>Máx. parcelas</span><input name="max_installments" type="number" min="1" max="24"
+            value="1"></label>
+        <label class="field"><span>% desconto à vista</span><input name="cash_pct" inputmode="decimal"
+            placeholder="5"></label>
+        <label class="field"><span>Preço à vista (R$)</span><input name="cash_amount" inputmode="decimal"
+            placeholder="calculado"></label>
+        <label class="field span-2"><span>Observação do preço</span><input name="note"
+            placeholder="ex.: instalação não inclusa"></label>
+        <label class="check"><input type="checkbox" name="on_request"> Preço sob consulta (IA transfere para
+          humano)</label>
         <label class="check"><input type="checkbox" name="interest_free" checked> Parcelas sem juros</label>
         <label class="check"><input type="checkbox" name="in_stock" checked> Em estoque</label>
         <label class="check"><input type="checkbox" name="active" checked> Ativo no catálogo</label>
-        <label class="field span-3"><span>Variantes (JSON avançado, opcional)</span><textarea name="variants" rows="3" class="mono" placeholder="[]"></textarea></label>
+        <label class="field span-3"><span>Variantes (JSON avançado, opcional)</span><textarea name="variants" rows="3"
+            class="mono" placeholder="[]"></textarea></label>
       </div>
       <div class="modal-actions">
         <button class="btn btn-ghost" value="cancel" formnovalidate>Cancelar</button>
@@ -319,9 +366,12 @@
   <!-- Modal: novo cliente -->
   <dialog id="dlg-new" class="modal modal-sm">
     <form method="dialog" id="form-new" class="modal-body">
-      <div class="card-head"><h2>Novo Cliente</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Fechar">✕</button></div>
+      <div class="card-head">
+        <h2>Novo Cliente</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Fechar">✕</button>
+      </div>
       <div class="form-grid cols-2">
-        <label class="field span-2"><span>Identificador (tenant_id)</span><input name="tenant_id" required pattern="[a-z0-9][a-z0-9_\-]{1,63}" placeholder="minha-loja"></label>
+        <label class="field span-2"><span>Identificador (tenant_id)</span><input name="tenant_id" required
+            pattern="[a-z0-9][a-z0-9_\-]{1,63}" placeholder="minha-loja"></label>
         <label class="field span-2"><span>Nome de exibição</span><input name="display_name" required></label>
         <label class="field"><span>Segmento / Categoria</span>
           <select name="segment">
@@ -346,7 +396,8 @@
             <option value="enterprise">Escala Enterprise (R$ 2.990/mês · até 6.000 conv.)</option>
           </select>
         </label>
-        <label class="field"><span>Nicho / Especialidade (opcional)</span><input name="niche_name" placeholder="ex.: Energia Solar, Móveis Planejados"></label>
+        <label class="field"><span>Nicho / Especialidade (opcional)</span><input name="niche_name"
+            placeholder="ex.: Energia Solar, Móveis Planejados"></label>
         <label class="field"><span>Fuso horário</span><input name="timezone" value="America/Belem"></label>
       </div>
       <div class="modal-actions">
@@ -376,26 +427,37 @@
       </div>
 
       <section class="prpane active" data-prpane="l2">
-        <label class="check"><input type="checkbox" id="pr-l2-custom"> Usar playbook personalizado para este cliente (substitui o padrão do segmento só aqui)</label>
+        <label class="check"><input type="checkbox" id="pr-l2-custom"> Usar playbook personalizado para este cliente
+          (substitui o padrão do segmento só aqui)</label>
         <p class="muted small" id="pr-l2-hint"></p>
         <textarea id="pr-l2" class="mono prompt-area" rows="16" spellcheck="false"></textarea>
-        <div class="row-between small"><span class="muted">Use <code>{display_name}</code> para o nome do cliente. Tags estruturais do Kernel são removidas automaticamente.</span><span id="pr-l2-count" class="mono muted"></span></div>
-        <div class="toolbar"><button class="btn btn-sm" id="pr-l2-copy">⤵ Copiar o padrão do segmento para editar</button></div>
+        <div class="row-between small"><span class="muted">Use <code>{display_name}</code> para o nome do cliente. Tags
+            estruturais do Kernel são removidas automaticamente.</span><span id="pr-l2-count" class="mono muted"></span>
+        </div>
+        <div class="toolbar"><button class="btn btn-sm" id="pr-l2-copy">⤵ Copiar o padrão do segmento para
+            editar</button></div>
       </section>
 
       <section class="prpane" data-prpane="l3">
-        <p class="muted small">Regras e particularidades desta empresa: endereço/referências, região atendida, tom regional, diferenciais, perguntas obrigatórias. Não coloque preços, prazos ou fretes aqui: eles vêm sempre do catálogo e das ferramentas.</p>
-        <textarea id="pr-l3" class="mono prompt-area" rows="16" spellcheck="false" placeholder="- Loja física na Av. ..., bairro ...&#10;- Atendemos a cidade X e região&#10;- Sempre pergunte se ..."></textarea>
-        <div class="row-between small"><span class="muted">Em conflito com o Kernel, o Kernel prevalece.</span><span id="pr-l3-count" class="mono muted"></span></div>
+        <p class="muted small">Regras e particularidades desta empresa: endereço/referências, região atendida, tom
+          regional, diferenciais, perguntas obrigatórias. Não coloque preços, prazos ou fretes aqui: eles vêm sempre do
+          catálogo e das ferramentas.</p>
+        <textarea id="pr-l3" class="mono prompt-area" rows="16" spellcheck="false"
+          placeholder="- Loja física na Av. ..., bairro ...&#10;- Atendemos a cidade X e região&#10;- Sempre pergunte se ..."></textarea>
+        <div class="row-between small"><span class="muted">Em conflito com o Kernel, o Kernel prevalece.</span><span
+            id="pr-l3-count" class="mono muted"></span></div>
       </section>
 
       <section class="prpane" data-prpane="compiled">
-        <div class="row-between"><span class="muted small">Texto final que o modelo recebe (regras globais + camadas deste cliente), com um lead fictício. <span id="pr-compiled-meta" class="mono"></span></span><button class="btn btn-sm" id="pr-preview">↻ Atualizar com o rascunho</button></div>
+        <div class="row-between"><span class="muted small">Texto final que o modelo recebe (regras globais + camadas
+            deste cliente), com um lead fictício. <span id="pr-compiled-meta" class="mono"></span></span><button
+            class="btn btn-sm" id="pr-preview">↻ Atualizar com o rascunho</button></div>
         <pre id="pr-compiled" class="prompt-pre"></pre>
       </section>
 
       <section class="prpane" data-prpane="history">
-        <p class="muted small">A cada gravação, a versão anterior das Camadas 2 e 3 é guardada (últimas 30). Carregar uma versão só preenche o editor; nada é gravado até você salvar.</p>
+        <p class="muted small">A cada gravação, a versão anterior das Camadas 2 e 3 é guardada (últimas 30). Carregar
+          uma versão só preenche o editor; nada é gravado até você salvar.</p>
         <div id="pr-history" class="list"></div>
       </section>
 
@@ -410,10 +472,15 @@
   <!-- Modal: confirmação de alteração do prompt -->
   <dialog id="dlg-prompt-confirm" class="modal modal-sm">
     <form method="dialog" id="form-prompt-confirm" class="modal-body">
-      <div class="card-head"><h2>⚠️ Confirmar alteração do prompt</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Fechar">✕</button></div>
-      <p class="small">A mudança vale <strong>imediatamente</strong> para todas as conversas reais deste cliente. A versão atual fica salva no histórico.</p>
+      <div class="card-head">
+        <h2>⚠️ Confirmar alteração do prompt</h2><button class="icon-btn" value="cancel" formnovalidate
+          aria-label="Fechar">✕</button>
+      </div>
+      <p class="small">A mudança vale <strong>imediatamente</strong> para todas as conversas reais deste cliente. A
+        versão atual fica salva no histórico.</p>
       <ul id="prc-summary" class="small prc-summary"></ul>
-      <label class="field"><span>Digite <code id="prc-expected"></code> para confirmar</span><input name="confirm" id="prc-input" autocomplete="off" spellcheck="false"></label>
+      <label class="field"><span>Digite <code id="prc-expected"></code> para confirmar</span><input name="confirm"
+          id="prc-input" autocomplete="off" spellcheck="false"></label>
       <div class="modal-actions">
         <button class="btn btn-ghost" value="cancel" formnovalidate>Cancelar</button>
         <button class="btn btn-danger" value="confirm" id="prc-ok" disabled>Aplicar no agente</button>
@@ -424,9 +491,13 @@
   <!-- Modal: token -->
   <dialog id="dlg-auth" class="modal modal-sm">
     <form method="dialog" id="form-auth" class="modal-body">
-      <div class="card-head"><h2>🔑 Token de administrador</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Fechar">✕</button></div>
+      <div class="card-head">
+        <h2>🔑 Token de administrador</h2><button class="icon-btn" value="cancel" formnovalidate
+          aria-label="Fechar">✕</button>
+      </div>
       <p class="muted small">Informe o valor de <code>ADMIN_TOKEN</code>. Ele fica salvo apenas neste navegador.</p>
-      <label class="field"><span>Token</span><input name="token" type="password" autocomplete="current-password"></label>
+      <label class="field"><span>Token</span><input name="token" type="password"
+          autocomplete="current-password"></label>
       <div class="modal-actions">
         <button class="btn btn-ghost" value="clear" formnovalidate>Esquecer token</button>
         <button class="btn btn-primary" value="save">Salvar</button>
@@ -437,5 +508,5 @@
   <div id="toasts" class="toasts" aria-live="polite"></div>
   <script src="/static/admin/app.js?v=0.7.0" defer></script>
 </body>
-</html>
 
+</html>
