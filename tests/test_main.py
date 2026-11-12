@@ -5,7 +5,9 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import tempfile
 import time
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -14,6 +16,19 @@ from src.config import Settings
 from src.core.schemas import MessageBatch
 
 PHONE = "5591988887777"
+PROJECT_TENANTS = Path(__file__).resolve().parents[1] / "data" / "tenants"
+
+
+def _isolated_tenants_dir() -> Path:
+    """Cópia temporária dos tenants SEM overrides de debounce: o teste não depende (nem altera)
+    das configurações reais que o usuário ajusta pelo painel."""
+    target = Path(tempfile.mkdtemp(prefix="lobo-tenants-"))
+    for src in PROJECT_TENANTS.glob("*.json"):
+        data = json.loads(src.read_text(encoding="utf-8"))
+        data.get("tenant", {}).pop("debounce_silence_seconds", None)
+        data.get("tenant", {}).pop("debounce_max_window_seconds", None)
+        (target / src.name).write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    return target
 
 
 def settings(**kw) -> Settings:
@@ -26,6 +41,7 @@ def settings(**kw) -> Settings:
         # ETAPA 5: fora de produção a trava Sandbox é obrigatória → o lead de teste fica na whitelist
         "sandbox_allowed_phones": [PHONE],
         "sandbox_config_path": None,
+        "tenant_data_dir": _isolated_tenants_dir(),
     }
     base.update(kw)
     return Settings(_env_file=None, **base)

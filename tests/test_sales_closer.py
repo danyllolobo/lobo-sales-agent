@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 
 import fakeredis
 import pytest
+from pathlib import Path
 from fastapi.testclient import TestClient
 
 from main import create_app
@@ -306,7 +307,7 @@ async def test_scenario_5_elegant_escalation_to_commercial_manager_without_robot
 # =========================================================================== #
 # Seletor Dinâmico de Modelos de IA (`llm_model`) no Backend, Prompt e Painel
 # =========================================================================== #
-async def test_dynamic_llm_model_selector_per_tenant_and_admin_api(store: JsonTenantDataStore):
+async def test_dynamic_llm_model_selector_per_tenant_and_admin_api(store: JsonTenantDataStore, tmp_path):
     # 1. Verifica que o prompt e o TenantConfig expõem `llm_model`
     comp = store.get("companhia-dos-sonhos")
     assert comp.tenant.llm_model == "gemini-3.8-flash"
@@ -316,7 +317,17 @@ async def test_dynamic_llm_model_selector_per_tenant_and_admin_api(store: JsonTe
     assert HUMAN_PERSONA_RULES.splitlines()[1] in prompt
 
     # 2. Verifica factory `create_gemini_chat_model` com override de modelo
-    settings = Settings(_env_file=None, redis_backend="fake")
+    # Dados isolados: o teste NUNCA grava no sandbox_config.json nem nos tenants reais do projeto
+    iso_tenants = tmp_path / "tenants_iso"
+    iso_tenants.mkdir()
+    for src_file in (Path(__file__).resolve().parents[1] / "data" / "tenants").glob("*.json"):
+        (iso_tenants / src_file.name).write_text(src_file.read_text(encoding="utf-8"), encoding="utf-8")
+    settings = Settings(
+        _env_file=None,
+        redis_backend="fake",
+        sandbox_config_path=tmp_path / "sandbox_config.json",
+        tenant_data_dir=iso_tenants,
+    )
     m_pro = create_gemini_chat_model(settings, model_name="gemini-2.5-pro")
     assert isinstance(m_pro, DeterministicSalesChatModel)
     assert m_pro.model_name == "gemini-2.5-pro"

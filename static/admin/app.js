@@ -957,6 +957,19 @@
         </div>
       </article>`;
 
+    const segLabel = (SEGMENT_OPTIONS.find(([v]) => v === t.segment) || [t.segment, t.segment])[1];
+    const l3Len = (t.custom_instructions || "").length;
+    const promptCard = `
+      <article class="card section">
+        <div class="card-head"><h2>🧠 System Prompt do Agente (camadas)</h2><button class="btn btn-primary btn-sm" data-act="open-prompt">🧠 Ver e editar prompt</button></div>
+        <div class="prompt-card-layers">
+          <div class="layer"><strong>🔒 Camada 1 · Kernel global</strong><span>Identidade humana, uso de ferramentas e anti-alucinação. Igual para todos os clientes (somente leitura).</span></div>
+          <div class="layer"><strong>✏️ Camada 2 · Playbook</strong><span>${t.playbook_override ? "Personalizado para este cliente" : `Padrão do segmento: ${esc(segLabel)}`}</span></div>
+          <div class="layer"><strong>✏️ Camada 3 · Instruções da empresa</strong><span>${l3Len ? `${l3Len.toLocaleString("pt-BR")} caracteres cadastrados` : "Nenhuma instrução cadastrada"}</span></div>
+        </div>
+        <p class="muted small" style="margin-top:10px">As alterações nas camadas 2 e 3 pedem confirmação, valem na hora para as conversas reais e a versão anterior fica no histórico.</p>
+      </article>`;
+
     $("#tn-editor").innerHTML = `
       <article class="card">
         <div class="card-head"><h2>⚙️ Configurações gerais &amp; Plano Comercial</h2>${d.demo_data ? `<span class="chip tag-demo">DADOS DE DEMONSTRAÇÃO</span>` : `<span class="chip chip-ok">dados reais</span>`}</div>
@@ -973,10 +986,6 @@
           ${field("CRM Nativo", sel("tenant.crm_provider", ["chatwoot", "ghl", "none"], 'data-act="crm-provider"'))}
           ${field("Modelo de IA", selPairs("tenant.llm_model", LLM_MODEL_OPTIONS, "gemini-3.8-flash"), "span-2")}
           ${field("Chave HMAC / Secret do Webhook", inp("tenant.webhook_secret", "str?", 'placeholder="opcional (sobrescreve .env)"'), "span-2")}
-          <label class="field span-4">
-            <span>Instruções Específicas da Empresa (Prompt Customizado do Nicho)</span>
-            <textarea data-path="tenant.custom_instructions" data-type="str?" rows="2" placeholder="Regras extras de atendimento, diferenciais ou perguntas específicas desta empresa…">${esc(val("tenant.custom_instructions") || "")}</textarea>
-          </label>
           <label class="field span-2">
             <span>⏱️ Silêncio para fechar o lote (debounce): <strong id="tn-silence-val" class="mono">${esc(t.debounce_silence_seconds ?? S.overview?.debounce?.silence_seconds ?? 8)}s</strong></span>
             <input type="range" data-path="tenant.debounce_silence_seconds" data-type="num?" min="2" max="30" step="1" value="${esc(t.debounce_silence_seconds ?? S.overview?.debounce?.silence_seconds ?? 8)}">
@@ -996,6 +1005,8 @@
           ${field("Token Bearer da API Externa (opcional)", inp("tenant.external_api_token", "str?", 'type="password" placeholder="Bearer token opcional"'))}
         </div>
       </article>
+
+      ${promptCard}
 
       ${followupCard}
 
@@ -1164,6 +1175,7 @@
         break;
       case "disable-calendar": if (!confirm("Desativar a agenda deste cliente?")) return; d.calendar = null; break;
       case "new-item": openItem(null); return;
+      case "open-prompt": openPrompt(); return;
       case "edit-item": openItem(i); return;
       case "del-item": {
         const it = d.catalog.items[i];
@@ -1204,6 +1216,165 @@
     setDirty(false);
     renderTenant();
     toast("ok", "Alterações descartadas");
+  });
+
+  // ------------------------------------------------------------------ editor do System Prompt (camadas 2/3)
+  const PR = { data: null, original: { l2: null, l3: null }, tenantId: null, pendingSave: null };
+  const prNorm = (v) => (String(v ?? "").replace(/\r\n/g, "\n").trim() || null);
+
+  function prDraft() {
+    return {
+      playbook_override: $("#pr-l2-custom").checked ? prNorm($("#pr-l2").value) : null,
+      custom_instructions: prNorm($("#pr-l3").value),
+    };
+  }
+  function prChanged() {
+    const d = prDraft();
+    return d.playbook_override !== PR.original.l2 || d.custom_instructions !== PR.original.l3;
+  }
+  function setPrTab(name) {
+    $$("#dlg-prompt .subtab").forEach((b) => b.classList.toggle("active", b.dataset.prtab === name));
+    $$("#dlg-prompt .prpane").forEach((p) => p.classList.toggle("active", p.dataset.prpane === name));
+  }
+  function updatePrCounts() {
+    const max = PR.data?.max_layer_chars || 12000;
+    const l2 = $("#pr-l2").value.length, l3 = $("#pr-l3").value.length;
+    $("#pr-l2-count").textContent = `${l2.toLocaleString("pt-BR")} / ${max.toLocaleString("pt-BR")}`;
+    $("#pr-l3-count").textContent = `${l3.toLocaleString("pt-BR")} / ${max.toLocaleString("pt-BR")}`;
+    $("#pr-dirty").textContent = prChanged() ? "● Alterações não salvas no prompt" : "";
+  }
+  function syncPrL2() {
+    const custom = $("#pr-l2-custom").checked;
+    const ta = $("#pr-l2");
+    ta.readOnly = !custom;
+    if (!custom) ta.value = PR.data?.segment_default_playbook || "";
+    $("#pr-l2-hint").textContent = custom
+      ? "Playbook personalizado: vale somente para este cliente. Desmarque para voltar ao padrão do segmento."
+      : `Mostrando o padrão do segmento "${PR.data?.segment || ""}" (somente leitura). Marque a opção acima para personalizar a partir dele.`;
+    updatePrCounts();
+  }
+  function renderPrHistory(revs) {
+    const box = $("#pr-history");
+    if (!revs || !revs.length) { box.innerHTML = `<div class="empty">Nenhuma versão anterior salva ainda.</div>`; return; }
+    box.innerHTML = revs.map((r, i) => `
+      <div class="list-item">
+        <div class="grow"><strong>${esc(r.saved_at ? new Date(r.saved_at).toLocaleString("pt-BR") : r.revision)}</strong>
+          <div class="muted small">Camada 2: ${r.playbook_override ? `personalizada (${r.playbook_override.length} car.)` : "padrão do segmento"} · Camada 3: ${r.custom_instructions ? `${r.custom_instructions.length} car.` : "vazia"}</div></div>
+        <button class="btn btn-sm" data-pr-rev="${i}">⤴ Carregar no editor</button>
+      </div>`).join("");
+  }
+  function applyPromptState(state) {
+    PR.data = state;
+    PR.original = { l2: prNorm(state.playbook_override), l3: prNorm(state.custom_instructions) };
+    $("#pr-l2-custom").checked = !!PR.original.l2;
+    $("#pr-l2").value = PR.original.l2 || state.segment_default_playbook || "";
+    $("#pr-l3").value = PR.original.l3 || "";
+    $("#pr-l1").textContent = state.kernel || "";
+    $("#pr-compiled").textContent = state.compiled_preview || "";
+    $("#pr-compiled-meta").textContent = state.compiled_chars ? `· ${state.compiled_chars.toLocaleString("pt-BR")} caracteres` : "";
+    renderPrHistory(state.revisions);
+    syncPrL2();
+  }
+  async function openPrompt() {
+    if (!S.tenant) return;
+    const id = S.tenant.tenant.tenant_id;
+    const r = await api("GET", `/api/admin/tenants/${encodeURIComponent(id)}/prompt`);
+    if (!r.ok) { toast("err", "Falha ao carregar o System Prompt", r.error, r.ms); return; }
+    PR.tenantId = id;
+    $("#pr-tenant-label").textContent = `· ${S.tenant.tenant.display_name} (${id})`;
+    applyPromptState(r.data);
+    setPrTab("l2");
+    $("#dlg-prompt").showModal();
+  }
+  function closePrompt() {
+    if (prChanged() && !confirm("Há alterações não salvas no prompt. Descartar?")) return;
+    $("#dlg-prompt").close();
+  }
+  function lineDelta(before, after) {
+    const a = new Set(String(before || "").split("\n").map((l) => l.trim()).filter(Boolean));
+    const b = new Set(String(after || "").split("\n").map((l) => l.trim()).filter(Boolean));
+    let added = 0, removed = 0;
+    b.forEach((l) => { if (!a.has(l)) added++; });
+    a.forEach((l) => { if (!b.has(l)) removed++; });
+    return `+${added} / −${removed} linhas`;
+  }
+
+  $("#dlg-prompt").addEventListener("click", (ev) => {
+    const tab = ev.target.closest("[data-prtab]");
+    if (tab) { setPrTab(tab.dataset.prtab); return; }
+    const rev = ev.target.closest("[data-pr-rev]");
+    if (rev) {
+      const r = PR.data?.revisions?.[Number(rev.dataset.prRev)];
+      if (!r) return;
+      $("#pr-l2-custom").checked = !!r.playbook_override;
+      $("#pr-l2").value = r.playbook_override || PR.data.segment_default_playbook || "";
+      $("#pr-l3").value = r.custom_instructions || "";
+      syncPrL2();
+      setPrTab("l2");
+      toast("ok", "Versão carregada no editor", "Revise e clique em “Salvar alterações…” para aplicar.");
+    }
+  });
+  $("#dlg-prompt").addEventListener("cancel", (ev) => { ev.preventDefault(); closePrompt(); });
+  $("#pr-close").addEventListener("click", closePrompt);
+  $("#pr-cancel").addEventListener("click", closePrompt);
+  $("#pr-l2-custom").addEventListener("change", syncPrL2);
+  $("#pr-l2").addEventListener("input", updatePrCounts);
+  $("#pr-l3").addEventListener("input", updatePrCounts);
+  $("#pr-l2-copy").addEventListener("click", () => {
+    $("#pr-l2-custom").checked = true;
+    $("#pr-l2").value = PR.data?.segment_default_playbook || "";
+    syncPrL2();
+    $("#pr-l2").focus();
+  });
+  $("#pr-preview").addEventListener("click", async (ev) => {
+    const r = await act(ev.currentTarget, "Prévia do prompt atualizada",
+      () => api("POST", `/api/admin/tenants/${encodeURIComponent(PR.tenantId)}/prompt/preview`, prDraft()),
+      { okMsg: "Compilado com o rascunho (nada foi gravado)." });
+    if (r.ok) {
+      $("#pr-compiled").textContent = r.data.compiled_preview;
+      $("#pr-compiled-meta").textContent = `· ${r.data.compiled_chars.toLocaleString("pt-BR")} caracteres (rascunho)`;
+    }
+  });
+  $("#pr-save").addEventListener("click", () => {
+    if (!prChanged()) { toast("ok", "Nada para salvar", "O prompt está igual à versão aplicada."); return; }
+    const d = prDraft();
+    const items = [];
+    if (d.playbook_override !== PR.original.l2) {
+      const from = PR.original.l2 ? "personalizado" : "padrão do segmento";
+      const to = d.playbook_override ? `personalizado (${d.playbook_override.length.toLocaleString("pt-BR")} car.)` : "padrão do segmento";
+      items.push(`<li><strong>Camada 2 · Playbook:</strong> ${esc(from)} → ${esc(to)} <span class="muted">(${esc(lineDelta(PR.original.l2 || PR.data.segment_default_playbook, d.playbook_override || PR.data.segment_default_playbook))})</span></li>`);
+    }
+    if (d.custom_instructions !== PR.original.l3) {
+      items.push(`<li><strong>Camada 3 · Instruções:</strong> ${(PR.original.l3 || "").length.toLocaleString("pt-BR")} → ${(d.custom_instructions || "").length.toLocaleString("pt-BR")} caracteres <span class="muted">(${esc(lineDelta(PR.original.l3, d.custom_instructions))})</span></li>`);
+    }
+    $("#prc-summary").innerHTML = items.join("");
+    $("#prc-expected").textContent = PR.tenantId;
+    $("#prc-input").value = "";
+    $("#prc-ok").disabled = true;
+    PR.pendingSave = d;
+    $("#dlg-prompt-confirm").showModal();
+    $("#prc-input").focus();
+  });
+  $("#prc-input").addEventListener("input", (ev) => { $("#prc-ok").disabled = ev.target.value.trim() !== PR.tenantId; });
+  $("#dlg-prompt-confirm").addEventListener("close", async () => {
+    const dlg = $("#dlg-prompt-confirm");
+    if (dlg.returnValue !== "confirm" || !PR.pendingSave) { PR.pendingSave = null; return; }
+    dlg.returnValue = "";
+    const body = { ...PR.pendingSave, confirm_tenant_id: $("#prc-input").value.trim() };
+    PR.pendingSave = null;
+    const r = await act($("#pr-save"), "System Prompt atualizado e aplicado",
+      () => api("PUT", `/api/admin/tenants/${encodeURIComponent(PR.tenantId)}/prompt`, body),
+      { okMsg: (data) => (data.backup_revision ? `Versão anterior salva no histórico (${data.backup_revision}).` : "Aplicado imediatamente."), errTitle: "Erro ao salvar o prompt" });
+    if (!r.ok) return;
+    applyPromptState(r.data.prompt);
+    // Mantém o editor do cliente coerente (evita sobrescrever o prompt com um rascunho antigo)
+    ["playbook_override", "custom_instructions"].forEach((k) => {
+      if (S.tenant?.tenant) S.tenant.tenant[k] = r.data.tenant.tenant[k] ?? null;
+      if (S.draft?.tenant) S.draft.tenant[k] = r.data.tenant.tenant[k] ?? null;
+    });
+    const idx = S.tenants.findIndex((t) => t.tenant_id === PR.tenantId);
+    if (idx >= 0 && r.data.summary) S.tenants[idx] = r.data.summary;
+    renderTenant();
   });
 
   // ------------------------------------------------------------------ modal item

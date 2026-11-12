@@ -24,6 +24,7 @@ from src.config import Settings
 from src.core.schemas import IncomingMessage, MessageBatch, MessageType, Provider, normalize_phone, utcnow
 from src.tools.calendar import CalendarService
 from src.tools.catalog import CatalogService
+from src.tools.geo import GeoLookup
 from src.tools.handoff import AIPauseRegistry, HandoffService
 from src.tools.tenant_data import TenantDataStore
 
@@ -44,13 +45,14 @@ class Playground:
         settings: Settings,
         redis: aioredis.Redis | None,
         injected_llm: BaseChatModel | None = None,
+        geo: GeoLookup | None = None,
     ) -> None:
         self._store = store
         self._settings = settings
         self._injected_llm = injected_llm
         self.pause = AIPauseRegistry(redis, prefix="lobo:pg:pause") if redis is not None else None
         self.conversations = LeadConversationStore(redis, prefix="lobo:pg:conv", ttl_seconds=24 * 3600)
-        self._catalog = CatalogService(store)
+        self._catalog = CatalogService(store, geo=geo)
         self._calendar = CalendarService(store)
         self._handoff = HandoffService(store, self.pause, lambda _t: None, pause_hours=settings.ai_pause_hours)
         self._runners: dict[str, SalesAgentRunner] = {}

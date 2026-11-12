@@ -292,6 +292,22 @@ class AstraCallsGateway(WhatsAppGateway):
             log_contact=to,
         )
 
+    async def mark_played(self, session_id: str, to: str, message_ids: list[str]) -> None:
+        """Recibo de áudio ouvido. A API pública atual do AstraCalls só documenta `messages/seen`;
+        enviamos `type: "played"` no mesmo endpoint (mesma convenção do WAHA). Enquanto o AstraCalls
+        não implementar o campo, ele é ignorado e o efeito é a leitura comum (blue ticks)."""
+        if not message_ids:
+            return
+        try:
+            await self._request(
+                "POST",
+                self._session_path(session_id, "messages/seen"),
+                json={"to": self._to(to), "messageIds": message_ids, "type": "played"},
+                log_contact=to,
+            )
+        except GatewayError:
+            await self.mark_seen(session_id, to, message_ids)
+
     async def react(self, session_id: str, chat_id: str, message_id: str, emoji: str) -> None:
         await self._request(
             "POST",

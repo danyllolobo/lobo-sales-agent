@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="pt-BR" data-theme="dark">
 <head>
   <meta charset="utf-8">
@@ -16,7 +16,7 @@
       } catch (e) {}
     })();
   </script>
-  <link rel="stylesheet" href="/static/admin/app.css?v=0.5.0">
+  <link rel="stylesheet" href="/static/admin/app.css?v=0.7.0">
 </head>
 <body>
   <header class="topbar">
@@ -331,6 +331,77 @@
     </form>
   </dialog>
 
+  <!-- Modal: editor do System Prompt (camadas) -->
+  <dialog id="dlg-prompt" class="modal modal-xl">
+    <div class="modal-body">
+      <div class="card-head">
+        <h2>🧠 System Prompt do Agente <small class="muted" id="pr-tenant-label"></small></h2>
+        <button class="icon-btn" id="pr-close" aria-label="Fechar">✕</button>
+      </div>
+      <div class="layer-legend">
+        <span class="chip chip-lock">🔒 Camada 1 · Kernel global (somente leitura, igual para todos os clientes)</span>
+        <span class="chip chip-info">✏️ Camada 2 · Playbook do segmento</span>
+        <span class="chip chip-ok">✏️ Camada 3 · DNA exclusivo da empresa</span>
+      </div>
+      <div class="subtabs" role="tablist">
+        <button class="subtab active" data-prtab="l2">Camada 2 · Playbook</button>
+        <button class="subtab" data-prtab="l3">Camada 3 · Instruções da empresa</button>
+        <button class="subtab" data-prtab="l1">🔒 Camada 1 · Kernel</button>
+        <button class="subtab" data-prtab="compiled">👁 Prompt compilado</button>
+        <button class="subtab" data-prtab="history">🕘 Versões</button>
+      </div>
+
+      <section class="prpane active" data-prpane="l2">
+        <label class="check"><input type="checkbox" id="pr-l2-custom"> Usar playbook personalizado para este cliente (substitui o padrão do segmento só aqui)</label>
+        <p class="muted small" id="pr-l2-hint"></p>
+        <textarea id="pr-l2" class="mono prompt-area" rows="16" spellcheck="false"></textarea>
+        <div class="row-between small"><span class="muted">Use <code>{display_name}</code> para o nome do cliente. Tags estruturais do Kernel são removidas automaticamente.</span><span id="pr-l2-count" class="mono muted"></span></div>
+        <div class="toolbar"><button class="btn btn-sm" id="pr-l2-copy">⤵ Copiar o padrão do segmento para editar</button></div>
+      </section>
+
+      <section class="prpane" data-prpane="l3">
+        <p class="muted small">Regras e particularidades desta empresa: endereço/referências, região atendida, tom regional, diferenciais, perguntas obrigatórias. Não coloque preços, prazos ou fretes aqui: eles vêm sempre do catálogo e das ferramentas.</p>
+        <textarea id="pr-l3" class="mono prompt-area" rows="16" spellcheck="false" placeholder="- Loja física na Av. ..., bairro ...&#10;- Atendemos a cidade X e região&#10;- Sempre pergunte se ..."></textarea>
+        <div class="row-between small"><span class="muted">Em conflito com o Kernel, o Kernel prevalece.</span><span id="pr-l3-count" class="mono muted"></span></div>
+      </section>
+
+      <section class="prpane" data-prpane="l1">
+        <div class="notice notice-info">O Kernel garante identidade humana, uso correto das ferramentas e anti-alucinação para TODOS os clientes. Ele é mantido no código e não pode ser editado pelo painel.</div>
+        <pre id="pr-l1" class="prompt-pre"></pre>
+      </section>
+
+      <section class="prpane" data-prpane="compiled">
+        <div class="row-between"><span class="muted small">Prévia com um lead fictício, no estágio de descoberta. <span id="pr-compiled-meta" class="mono"></span></span><button class="btn btn-sm" id="pr-preview">↻ Atualizar com o rascunho</button></div>
+        <pre id="pr-compiled" class="prompt-pre"></pre>
+      </section>
+
+      <section class="prpane" data-prpane="history">
+        <p class="muted small">A cada gravação, a versão anterior das Camadas 2 e 3 é guardada (últimas 30). Carregar uma versão só preenche o editor; nada é gravado até você salvar.</p>
+        <div id="pr-history" class="list"></div>
+      </section>
+
+      <div class="modal-actions">
+        <span id="pr-dirty" class="muted small spacer"></span>
+        <button class="btn btn-ghost" id="pr-cancel">Fechar</button>
+        <button class="btn btn-primary" id="pr-save">💾 Salvar alterações…</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Modal: confirmação de alteração do prompt -->
+  <dialog id="dlg-prompt-confirm" class="modal modal-sm">
+    <form method="dialog" id="form-prompt-confirm" class="modal-body">
+      <div class="card-head"><h2>⚠️ Confirmar alteração do prompt</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Fechar">✕</button></div>
+      <p class="small">A mudança vale <strong>imediatamente</strong> para todas as conversas reais deste cliente. A versão atual fica salva no histórico.</p>
+      <ul id="prc-summary" class="small prc-summary"></ul>
+      <label class="field"><span>Digite <code id="prc-expected"></code> para confirmar</span><input name="confirm" id="prc-input" autocomplete="off" spellcheck="false"></label>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" value="cancel" formnovalidate>Cancelar</button>
+        <button class="btn btn-danger" value="confirm" id="prc-ok" disabled>Aplicar no agente</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- Modal: token -->
   <dialog id="dlg-auth" class="modal modal-sm">
     <form method="dialog" id="form-auth" class="modal-body">
@@ -345,7 +416,7 @@
   </dialog>
 
   <div id="toasts" class="toasts" aria-live="polite"></div>
-  <script src="/static/admin/app.js?v=0.6.0" defer></script>
+  <script src="/static/admin/app.js?v=0.7.0" defer></script>
 </body>
 </html>
 

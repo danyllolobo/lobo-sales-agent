@@ -50,6 +50,7 @@ from src.crm import CRMConnector, create_crm
 from src.gateways import WhatsAppGateway, create_gateway
 from src.tools.calendar import CalendarService
 from src.tools.catalog import CatalogService
+from src.tools.geo import OpenGeoLookup
 from src.tools.handoff import AIPauseRegistry, HandoffService
 from src.tools.tenant_data import JsonTenantDataStore, TenantData
 
@@ -137,7 +138,8 @@ def create_app(
             return crm_cache[tenant.tenant_id]
 
         pause_registry = AIPauseRegistry(redis)
-        catalog = CatalogService(store)
+        geo = OpenGeoLookup() if settings.geo_enabled else None
+        catalog = CatalogService(store, geo=geo)
         calendar = CalendarService(store)
         handoff = HandoffService(
             store,
@@ -209,7 +211,7 @@ def create_app(
             crm_resolver=crm_resolver,
             pause_hours=settings.ai_pause_hours,
         )
-        app.state.playground = Playground(store=store, settings=settings, redis=redis, injected_llm=llm)
+        app.state.playground = Playground(store=store, settings=settings, redis=redis, injected_llm=llm, geo=geo)
         app.state.followup = FollowUpService(
             store=store,
             conversation_store=conv_store,
@@ -227,6 +229,8 @@ def create_app(
                 if crm is not None:
                     await crm.aclose()
             await app.state.http_client.aclose()
+            if geo is not None:
+                await geo.aclose()
             await redis.aclose()
             logger.info("Encerrando %s", settings.project_name)
 

@@ -285,6 +285,7 @@ async def test_from_me_human_pauses_ai_while_bot_echo_does_not():
         redis_backend="fake",
         waha_base_url="https://waha.example.com",
         waha_api_key="secret",
+        sandbox_config_path=None,
     )
     app = create_app(s)
     with TestClient(app) as client:

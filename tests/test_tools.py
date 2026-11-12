@@ -225,14 +225,19 @@ async def test_delivery_found(catalog, city):
 async def test_delivery_fee_and_unknown_city(catalog):
     r = await catalog.get_delivery_info("loja-teste", "Castanhal")
     assert r.data["fee_formatted"] == "R$ 90,00" and r.data["lead_time_formatted"] == "3 dias"
+    # Local não identificado: NUNCA vira handoff; o agente pergunta a cidade/CEP
     miss = await catalog.get_delivery_info("loja-teste", "Manaus")
-    assert miss.status is ToolStatus.NOT_FOUND and miss.requires_human and "NÃO prometa" in miss.agent_instruction
+    assert miss.status is ToolStatus.NOT_FOUND and not miss.requires_human
+    assert miss.reason == "location_unresolved"
+    assert "NÃO prometa" in miss.agent_instruction and "NÃO acione o handoff" in miss.agent_instruction
+    assert "Belém" in miss.data["served_cities"]
 
 
 async def test_business_info(catalog):
     assert (await catalog.get_business_info("loja-teste", "hours")).data["content"] == "Seg a sex, 9h às 18h"
     missing = await catalog.get_business_info("loja-teste", "warranty")
-    assert missing.status is ToolStatus.NOT_FOUND and missing.requires_human
+    assert missing.status is ToolStatus.NOT_FOUND and not missing.requires_human
+    assert "NÃO invente" in missing.agent_instruction
 
 
 # =========================================================================== #

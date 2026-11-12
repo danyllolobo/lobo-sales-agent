@@ -15,6 +15,13 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 from src.core.schemas import TenantId, utcnow
+from src.tools.geo import (
+    GeoLookup,
+    GeoResolution,
+    extract_cep,
+    extract_coordinates,
+    resolve_neighborhood,
+)
 from src.tools.results import (
     CENT,
     NO_PRICE_INSTRUCTION,
@@ -28,6 +35,8 @@ from src.tools.tenant_data import (
     BusinessInfoType,
     CatalogConfig,
     CatalogItem,
+    DeliveryConfig,
+    DeliveryZone,
     PriceInfo,
     TenantDataStore,
 )
@@ -46,83 +55,61 @@ _UFS = frozenset(
 
 _KNOWN_SIZES = frozenset({"solteiro", "casal", "queen", "king"})
 
-# Inteligência Geográfica Local: Bairros de Belém e Região Metropolitana (Ananindeua) -> (Nome Exibição, Cidade-Mãe)
-BELEM_METROPOLITAN_NEIGHBORHOODS: dict[str, tuple[str, str]] = {
-    "tapana": ("Tapanã", "Belém"),
-    "marambaia": ("Marambaia", "Belém"),
-    "tavares bastos": ("Marambaia", "Belém"),
-    "umarizal": ("Umarizal", "Belém"),
-    "icoaraci": ("Icoaraci", "Belém"),
-    "marco": ("Marco", "Belém"),
-    "pedreira": ("Pedreira", "Belém"),
-    "nazare": ("Nazaré", "Belém"),
-    "cabanagem": ("Cabanagem", "Belém"),
-    "bengui": ("Bengui", "Belém"),
-    "mangueirao": ("Mangueirão", "Belém"),
-    "parque verde": ("Parque Verde", "Belém"),
-    "augusto montenegro": ("Augusto Montenegro", "Belém"),
-    "guama": ("Guamá", "Belém"),
-    "jurunas": ("Jurunas", "Belém"),
-    "cremacao": ("Cremação", "Belém"),
-    "batista campos": ("Batista Campos", "Belém"),
-    "reduto": ("Reduto", "Belém"),
-    "sao bras": ("São Brás", "Belém"),
-    "souza": ("Souza", "Belém"),
-    "castanheira": ("Castanheira", "Belém"),
-    "sacramenta": ("Sacramenta", "Belém"),
-    "telegrafo": ("Telégrafo", "Belém"),
-    "terra firme": ("Terra Firme", "Belém"),
-    "condor": ("Condor", "Belém"),
-    "canudos": ("Canudos", "Belém"),
-    "fatima": ("Fátima", "Belém"),
-    "campina": ("Campina", "Belém"),
-    "cidade velha": ("Cidade Velha", "Belém"),
-    "mosqueiro": ("Mosqueiro", "Belém"),
-    "outeiro": ("Outeiro", "Belém"),
-    "tenone": ("Tenoné", "Belém"),
-    "pratinha": ("Pratinha", "Belém"),
-    "parque guajara": ("Parque Guajará", "Belém"),
-    "cidade nova": ("Cidade Nova", "Ananindeua"),
-    "coqueiro": ("Coqueiro", "Ananindeua"),
-    "aguas lindas": ("Águas Lindas", "Ananindeua"),
-    "aguas brancas": ("Águas Brancas", "Ananindeua"),
-    "jaderlandia": ("Jaderlândia", "Ananindeua"),
-    "atalaia": ("Atalaia", "Ananindeua"),
-    "icui": ("Icuí-Guajará", "Ananindeua"),
-    "icui guajara": ("Icuí-Guajará", "Ananindeua"),
-    "paar": ("Paar", "Ananindeua"),
-    "distrito industrial": ("Distrito Industrial", "Ananindeua"),
-    "40 horas": ("40 Horas", "Ananindeua"),
-    "quarenta horas": ("40 Horas", "Ananindeua"),
-    "curucamba": ("Curuçambá", "Ananindeua"),
-    "maguari": ("Maguari", "Ananindeua"),
-    "guanabara": ("Guanabara", "Ananindeua"),
-}
 
+def _catalog_sizes(catalog: CatalogConfig) -> frozenset[str]:
+    """Variantes de tamanho declaradas no PRÓPRIO catálogo (atributo `tamanho`), agnóstico de nicho.
 
-def resolve_metropolitan_neighborhood(raw_text: str) -> tuple[str, str] | None:
-    """Identifica se `raw_text` contém um bairro de Belém ou Ananindeua, retornando `(Bairro, Cidade)`."""
-    norm = f" {normalize_text(raw_text)} "
-    # Ordena chaves mais longas primeiro para priorizar nomes compostos ("cidade nova", "parque verde")
-    for token in sorted(BELEM_METROPOLITAN_NEIGHBORHOODS, key=len, reverse=True):
-        if f" {token} " in norm:
-            return BELEM_METROPOLITAN_NEIGHBORHOODS[token]
-    return None
+    Ex.: colchões (solteiro/casal/queen/king), roupas (p/m/g), piscinas (6x3/8x4)…
+    Mantém `_KNOWN_SIZES` como base para catálogos legados sem o atributo.
+    """
+    sizes = {
+        normalize_text(item.attributes.get("tamanho", ""))
+        for item in catalog.items
+        if item.attributes.get("tamanho")
+    }
+    return frozenset(s for s in sizes if s) or _KNOWN_SIZES
 
 PRICE_SHOW_INSTRUCTION = (
     "Use EXATAMENTE os valores formatados retornados (campos *_formatted). "
     "Não arredonde, não some, não ofereça descontos além do retornado. "
-    "Apresente os modelos retornados que correspondem ao tamanho solicitado pelo cliente que estão em estoque. "
+    "Apresente apenas os itens retornados que correspondem à variante pedida pelo cliente "
+    "(tamanho, modelo, modalidade etc.) e que estão disponíveis. "
     "NUNCA invente preços ou descontos fora da tabela."
 )
 
 OUT_OF_STOCK_INSTRUCTION = (
-    "AVISO DE ESTOQUE: O modelo/tamanho pesquisado pelo cliente está atualmente esgotado para pronta-entrega na loja física (in_stock=False). "
-    "Conduta comercial obrigatória de consultor humano: "
-    "1. Informe com simpatia e honestidade que o modelo nesse tamanho está temporariamente sem estoque de pronta-entrega imediata na loja física. "
-    "2. Você pode informar o valor oficial formatado da tabela normalmente (ex.: campos price_formatted e installments_formatted). "
-    "3. NUNCA acione o gerente comercial nem dê handoff imediatamente por causa de estoque! "
-    "4. Pergunte com naturalidade se o cliente gostaria que você consulte o prazo de reposição/encomenda com a fábrica ou se prefere conhecer opções a pronta-entrega em outro tamanho (como Casal)."
+    "AVISO DE DISPONIBILIDADE: o item/variante pesquisado está indisponível para pronta-entrega no momento (in_stock=False). "
+    "Conduta de consultor humano: "
+    "1. Informe com naturalidade e honestidade que essa opção está temporariamente indisponível para pronta-entrega. "
+    "2. Você pode informar o valor oficial formatado normalmente (price_formatted / installments_formatted). "
+    "3. NÃO acione o handoff por causa de disponibilidade. "
+    "4. Pergunte, em UMA frase, se o cliente prefere que você verifique o prazo de reposição/encomenda "
+    "ou se quer conhecer uma alternativa disponível (outra variante ou item parecido do catálogo)."
+)
+
+DELIVERY_OK_INSTRUCTION = (
+    "Informe a taxa (fee_formatted) e o prazo (lead_time_formatted) EXATAMENTE como retornados. "
+    "Se houver `neighborhood`, cite o bairro do cliente com naturalidade."
+)
+
+LOCATION_UNRESOLVED_INSTRUCTION = (
+    "Não foi possível identificar a cidade a partir do que o cliente disse. NÃO acione o handoff e NÃO prometa entrega. "
+    "Pergunte de forma leve, em UMA frase, a cidade/município (ou o CEP, ou que ele envie a localização pelo WhatsApp) "
+    "e, se ajudar, cite as cidades atendidas listadas em `served_cities`."
+)
+
+OUTSIDE_AREA_INSTRUCTION = (
+    "A cidade do cliente foi identificada, mas NÃO consta na área de entrega cadastrada. NÃO invente frete nem prazo "
+    "e NÃO acione o handoff automaticamente. Seja honesto e acolhedor: diga que a entrega padrão atende as cidades em "
+    "`served_cities`; se `pickup_available` for true, ofereça a retirada na loja (`store_location`). Pergunte se ele "
+    "quer seguir assim ou se prefere que você verifique uma entrega especial. Só acione `trigger_human_handoff` "
+    "(reason='customer_request') se o cliente pedir essa cotação especial."
+)
+
+BUSINESS_INFO_MISSING_INSTRUCTION = (
+    "Essa informação não está cadastrada. NÃO invente e NÃO acione o handoff por isso. Responda com naturalidade que "
+    "vai confirmar esse detalhe, siga conduzindo a conversa e só transfira se o cliente insistir ou se for decisivo "
+    "para fechar."
 )
 
 FEATURED_FALLBACK_INSTRUCTION = (
@@ -223,9 +210,16 @@ def score_item(item: CatalogItem, query_terms: set[str], synonyms: dict[str, str
 # Serviço
 # --------------------------------------------------------------------------- #
 class CatalogService:
-    def __init__(self, store: TenantDataStore, *, clock: Callable[[], datetime] = utcnow) -> None:
+    def __init__(
+        self,
+        store: TenantDataStore,
+        *,
+        clock: Callable[[], datetime] = utcnow,
+        geo: GeoLookup | None = None,
+    ) -> None:
         self._store = store
         self._clock = clock
+        self._geo = geo
 
     # -------------------------------------------------------------- busca
     @tool_guard("search_catalog")
@@ -249,7 +243,8 @@ class CatalogService:
         synonyms = _synonym_map(catalog)
         terms = _expand(tokens, synonyms)
         wanted_category = normalize_text(category) if category else None
-        requested_sizes = terms & _KNOWN_SIZES
+        known_sizes = _catalog_sizes(catalog)
+        requested_sizes = terms & known_sizes
 
         ranked: list[tuple[int, CatalogItem]] = []
         if terms or wanted_category:
@@ -260,7 +255,7 @@ class CatalogService:
                     continue
                 if requested_sizes:
                     item_size = normalize_text(item.attributes.get("tamanho", ""))
-                    if item_size in _KNOWN_SIZES and item_size not in requested_sizes:
+                    if item_size in known_sizes and item_size not in requested_sizes:
                         continue
                 score = score_item(item, terms, synonyms) if terms else 1
                 if score > 0:
@@ -351,63 +346,136 @@ class CatalogService:
         return ToolResult.success(tool, tenant_id, payload, instruction=instruction)
 
     # -------------------------------------------------------------- entrega
+    @staticmethod
+    def _zone_for_city(delivery: DeliveryConfig, city: str) -> tuple[DeliveryZone, str] | None:
+        """Zona cuja cidade cadastrada coincide (normalizada) com `city`."""
+        wanted = normalize_text(city)
+        parts = wanted.split()
+        if len(parts) > 1 and parts[-1] in _UFS:
+            wanted = " ".join(parts[:-1])
+        for zone in delivery.zones:
+            for c in zone.cities:
+                if normalize_text(c) == wanted:
+                    return zone, c
+        return None
+
+    @staticmethod
+    def _zone_city_in_text(delivery: DeliveryConfig, text: str) -> tuple[DeliveryZone, str] | None:
+        """Cidade cadastrada citada em qualquer parte do texto ("bairro X, Marituba"), a mais longa primeiro."""
+        norm = f" {normalize_text(text)} "
+        candidates = [(normalize_text(c), c, zone) for zone in delivery.zones for c in zone.cities]
+        for key, original, zone in sorted(candidates, key=lambda x: len(x[0]), reverse=True):
+            if key and f" {key} " in norm:
+                return zone, original
+        return None
+
+    @staticmethod
+    def _served_cities(delivery: DeliveryConfig) -> list[str]:
+        seen: list[str] = []
+        for zone in delivery.zones:
+            for c in zone.cities:
+                if c not in seen:
+                    seen.append(c)
+        return seen
+
+    async def _resolve_location(self, delivery: DeliveryConfig, text: str) -> GeoResolution | None:
+        """Cadeia genérica: cidade no texto -> gazetteer do tenant -> CEP -> coordenadas -> geocodificação."""
+        nb = resolve_neighborhood(text, delivery.neighborhoods)
+        direct = self._zone_city_in_text(delivery, text)
+        if direct is not None:
+            return GeoResolution(city=direct[1], neighborhood=nb[0] if nb else None, source="zone_text")
+        if nb is not None:
+            return GeoResolution(city=nb[1], neighborhood=nb[0], source="tenant_gazetteer")
+        if self._geo is None:
+            return None
+        cep = extract_cep(text)
+        if cep:
+            res = await self._geo.lookup_cep(cep)
+            if res is not None:
+                return res
+        coords = extract_coordinates(text)
+        if coords:
+            res = await self._geo.reverse(*coords)
+            if res is not None:
+                return res
+        return await self._geo.lookup_text(text, region_hint=delivery.region_hint)
+
     @tool_guard("get_delivery_info")
     async def get_delivery_info(self, tenant_id: str, city: str) -> ToolResult:
+        """Frete/prazo para o local citado (cidade, bairro, ponto de referência, CEP ou coordenadas).
+
+        REGRA: local desconhecido ou fora da área NUNCA gera `requires_human=True`; o agente pergunta
+        a cidade/CEP ou oferece alternativas (retirada), mantendo a conversa com o cliente.
+        """
         tool = "get_delivery_info"
         tenant_data = self._store.get(tenant_id)
         delivery = tenant_data.delivery
-        wanted = normalize_text(city)
-        # aceita "Belém", "belem pa", "Belém - PA", "Ananindeua/PA" ou bairros da RMB ("Tapanã", "Umarizal", etc.)
-        parts = wanted.split()
-        wanted_city = " ".join(parts[:-1]) if len(parts) > 1 and parts[-1] in _UFS else wanted
+        raw = (city or "").strip()
+        served = self._served_cities(delivery)
+        store_location = tenant_data.business_info.get("location")
 
-        matched_neighborhood: str | None = None
-        parent_city: str | None = None
-        nb_match = resolve_metropolitan_neighborhood(city)
-        if nb_match is not None:
-            matched_neighborhood, parent_city = nb_match
-            wanted_city = normalize_text(parent_city)
+        resolution: GeoResolution | None = None
+        match = self._zone_for_city(delivery, raw)
+        if match is not None:
+            resolution = GeoResolution(city=match[1], source="zone_exact")
+        else:
+            resolution = await self._resolve_location(delivery, raw)
+            if resolution is not None:
+                match = self._zone_for_city(delivery, resolution.city)
 
-        for zone in delivery.zones:
-            if any(normalize_text(c) in (wanted, wanted_city) for c in zone.cities):
-                unit = "dias úteis" if zone.business_days else "dias"
-                lead = (
-                    f"{zone.lead_time_days_min} {unit}"
-                    if zone.lead_time_days_min == zone.lead_time_days_max
-                    else f"{zone.lead_time_days_min} a {zone.lead_time_days_max} {unit}"
-                )
-                payload: dict[str, Any] = {
-                    "city": matched_neighborhood or city.strip(),
-                    "delivers": True,
-                    "fee": zone.fee,
-                    "fee_formatted": "Grátis" if zone.fee == 0 else format_brl(zone.fee),
-                    "lead_time_days_min": zone.lead_time_days_min,
-                    "lead_time_days_max": zone.lead_time_days_max,
-                    "lead_time_formatted": lead,
-                    "notes": zone.notes,
-                }
-                if matched_neighborhood and parent_city:
-                    payload["neighborhood"] = matched_neighborhood
-                    payload["parent_city"] = parent_city
-                    payload["store_reference"] = (
-                        "Nossa loja física fica na Av. Tavares Bastos, 1246F (Marambaia), pertinho de você!"
-                    )
-                return ToolResult.success(
-                    tool,
-                    tenant_id,
-                    payload,
-                    instruction="Informe a taxa e o prazo EXATAMENTE como retornados.",
-                )
-        return ToolResult.needs_human(
-            tool,
-            tenant_id,
-            ToolStatus.NOT_FOUND,
-            "delivery_zone_not_found",
-            instruction=(
-                "Esta cidade não consta na área de entrega cadastrada. NÃO prometa entrega, prazo ou frete: "
-                "diga que vai verificar com a equipe e acione o handoff humano."
-            ),
-            data={"city": city.strip()},
+        if match is not None and resolution is not None:
+            zone, zone_city = match
+            unit = "dias úteis" if zone.business_days else "dias"
+            lead = (
+                f"{zone.lead_time_days_min} {unit}"
+                if zone.lead_time_days_min == zone.lead_time_days_max
+                else f"{zone.lead_time_days_min} a {zone.lead_time_days_max} {unit}"
+            )
+            payload: dict[str, Any] = {
+                "city": resolution.neighborhood or zone_city,
+                "delivers": True,
+                "fee": zone.fee,
+                "fee_formatted": "Grátis" if zone.fee == 0 else format_brl(zone.fee),
+                "lead_time_days_min": zone.lead_time_days_min,
+                "lead_time_days_max": zone.lead_time_days_max,
+                "lead_time_formatted": lead,
+                "notes": zone.notes,
+                "resolution_source": resolution.source,
+            }
+            if resolution.neighborhood:
+                payload["neighborhood"] = resolution.neighborhood
+                payload["parent_city"] = zone_city
+                if store_location:
+                    payload["store_reference"] = store_location
+            return ToolResult.success(tool, tenant_id, payload, instruction=DELIVERY_OK_INSTRUCTION)
+
+        base: dict[str, Any] = {
+            "query": raw,
+            "delivers": False,
+            "served_cities": served,
+            "pickup_available": delivery.pickup_available,
+        }
+        if store_location:
+            base["store_location"] = store_location
+
+        if resolution is not None:
+            return ToolResult(
+                tool=tool,
+                tenant_id=tenant_id,
+                status=ToolStatus.NOT_FOUND,
+                requires_human=False,
+                reason="outside_delivery_area",
+                data={**base, **resolution.as_dict()},
+                agent_instruction=OUTSIDE_AREA_INSTRUCTION,
+            )
+        return ToolResult(
+            tool=tool,
+            tenant_id=tenant_id,
+            status=ToolStatus.NOT_FOUND,
+            requires_human=False,
+            reason="location_unresolved",
+            data=base,
+            agent_instruction=LOCATION_UNRESOLVED_INSTRUCTION,
         )
 
     # -------------------------------------------------------------- negócio
@@ -416,7 +484,14 @@ class CatalogService:
         tool = "get_business_info"
         info = self._store.get(tenant_id).business_info.get(info_type)
         if not info:
-            return ToolResult.needs_human(tool, tenant_id, ToolStatus.NOT_FOUND, f"business_info_missing:{info_type}")
+            return ToolResult(
+                tool=tool,
+                tenant_id=tenant_id,
+                status=ToolStatus.NOT_FOUND,
+                requires_human=False,
+                reason=f"business_info_missing:{info_type}",
+                agent_instruction=BUSINESS_INFO_MISSING_INSTRUCTION,
+            )
         return ToolResult.success(tool, tenant_id, {"info_type": info_type, "content": info})
 
     # -------------------------------------------------------------- helpers
@@ -501,13 +576,12 @@ class CatalogService:
 
 
 __all__ = [
-    "BELEM_METROPOLITAN_NEIGHBORHOODS",
     "BusinessInfoInput",
     "CatalogSearchInput",
     "CatalogService",
     "DeliveryQueryInput",
     "FEATURED_FALLBACK_INSTRUCTION",
     "PriceQueryInput",
-    "resolve_metropolitan_neighborhood",
+    "resolve_neighborhood",
     "tokenize",
 ]

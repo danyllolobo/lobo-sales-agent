@@ -92,6 +92,10 @@ class Settings(BaseSettings):
     debounce_max_window_seconds: float = Field(default=10.0, ge=2.0, le=60.0)
     split_messages: bool = True
 
+    # --- Geolocalização aberta (ViaCEP + OpenStreetMap), sem chave de API ---
+    # Desligada automaticamente em ENVIRONMENT=test.
+    geo_lookup_enabled: bool = True
+
     # --- Dados dos tenants & handoff ---
     tenant_data_dir: Path = PROJECT_ROOT / "data" / "tenants"
     allow_demo_data: bool | None = None
@@ -194,6 +198,10 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.environment == "production"
+
+    @property
+    def geo_enabled(self) -> bool:
+        return self.geo_lookup_enabled and self.environment != "test"
 
     @property
     def effective_allow_demo(self) -> bool:

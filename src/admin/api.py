@@ -7,7 +7,9 @@ em toast vermelho; sucesso vira toast verde.
 
 from __future__ import annotations
 
+import json
 import logging
+from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
@@ -17,9 +19,27 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from src.admin.auth import require_admin
 from src.admin.diagnostics import INTEGRATIONS, integration_overview, run_all_checks, run_check
 from src.admin.playground import PlaygroundUnavailable
+from src.agent.prompts import (
+    MAX_LAYER_CHARS,
+    build_system_prompt,
+    default_segment_playbook,
+    effective_playbook,
+    kernel_prompt,
+    sanitize_prompt_layer,
+)
+from src.agent.state import ConversationStage
 from src.core.exceptions import ConfigurationError, GatewayError, LoboError, TenantNotFoundError
 from src.core.sandbox import SandboxConfig
-from src.core.schemas import PLAN_SPECS, OutgoingMessage, Provider, TenantId, mask_phone, normalize_phone, utcnow
+from src.core.schemas import (
+    PLAN_SPECS,
+    LeadProfile,
+    OutgoingMessage,
+    Provider,
+    TenantId,
+    mask_phone,
+    normalize_phone,
+    utcnow,
+)
 from src.tools.tenant_data import TenantData, stamp_missing_price_dates
 
 logger = logging.getLogger("lobo.admin")
@@ -398,6 +418,140 @@ async def tenants_create(request: Request, payload: dict[str, Any] = Body(...)) 
 async def tenants_update(request: Request, tenant_id: TenantId, payload: dict[str, Any] = Body(...)) -> Any:
     _tenant_or_404(request, tenant_id)
     return await _save_tenant(request, payload, create=False, path_id=tenant_id)
+
+
+# --------------------------------------------------------------------------- #
+# System Prompt por cliente (Camada 1 somente leitura; Camadas 2 e 3 editáveis)
+# --------------------------------------------------------------------------- #
+class PromptLayersIn(BaseModel):
+    playbook_override: str | None = Field(default=None, max_length=MAX_LAYER_CHARS + 2000)
+    custom_instructions: str | None = Field(default=None, max_length=MAX_LAYER_CHARS + 2000)
+
+
+class PromptSaveIn(PromptLayersIn):
+    # Confirmação explícita: o painel exige digitar o tenant_id antes de gravar
+    confirm_tenant_id: str = Field(min_length=1, max_length=64)
+
+
+_PREVIEW_PHONE = "5591900000000"
+
+
+def _prompt_history_dir(request: Request, tenant_id: str) -> Path | None:
+    store = _state(request).tenants
+    path_for = getattr(store, "path_for", None)
+    if path_for is None:
+        return None
+    return Path(path_for(tenant_id)).parent / ".prompt_history" / tenant_id
+
+
+def _list_prompt_revisions(request: Request, tenant_id: str, limit: int = 20) -> list[dict[str, Any]]:
+    folder = _prompt_history_dir(request, tenant_id)
+    if folder is None or not folder.is_dir():
+        return []
+    out: list[dict[str, Any]] = []
+    for f in sorted(folder.glob("*.json"), reverse=True)[:limit]:
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        out.append({"revision": f.stem, "saved_at": data.get("saved_at"), **{
+            k: data.get(k) for k in ("playbook_override", "custom_instructions")
+        }})
+    return out
+
+
+def _backup_prompt_layers(request: Request, tenant: TenantData) -> str | None:
+    folder = _prompt_history_dir(request, tenant.tenant_id)
+    if folder is None:
+        return None
+    now = utcnow()
+    revision = now.strftime("%Y%m%dT%H%M%S%fZ")
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / f"{revision}.json").write_text(
+            json.dumps(
+                {
+                    "saved_at": now.isoformat(),
+                    "playbook_override": tenant.tenant.playbook_override,
+                    "custom_instructions": tenant.tenant.custom_instructions,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        # Retém apenas as 30 versões mais recentes
+        for old in sorted(folder.glob("*.json"), reverse=True)[30:]:
+            old.unlink(missing_ok=True)
+    except OSError as exc:
+        logger.warning("Falha ao gravar backup do prompt (%s)", type(exc).__name__)
+        return None
+    return revision
+
+
+def _with_layers(tenant: TenantData, playbook_override: str | None, custom_instructions: str | None) -> TenantData:
+    return tenant.model_copy(
+        update={
+            "tenant": tenant.tenant.model_copy(
+                update={
+                    "playbook_override": sanitize_prompt_layer(playbook_override),
+                    "custom_instructions": sanitize_prompt_layer(custom_instructions),
+                }
+            )
+        }
+    )
+
+
+def _prompt_state(request: Request, tenant: TenantData) -> dict[str, Any]:
+    lead = LeadProfile(tenant_id=tenant.tenant_id, phone=_PREVIEW_PHONE)
+    compiled = build_system_prompt(tenant, lead, stage=ConversationStage.DISCOVERY)
+    return {
+        "tenant_id": tenant.tenant_id,
+        "segment": tenant.tenant.segment.value,
+        "kernel": kernel_prompt(),
+        "segment_default_playbook": default_segment_playbook(tenant.tenant.segment).replace(
+            "{display_name}", tenant.tenant.display_name
+        ),
+        "playbook_override": tenant.tenant.playbook_override,
+        "custom_instructions": tenant.tenant.custom_instructions,
+        "effective_playbook": effective_playbook(tenant),
+        "compiled_preview": compiled,
+        "compiled_chars": len(compiled),
+        "max_layer_chars": MAX_LAYER_CHARS,
+        "revisions": _list_prompt_revisions(request, tenant.tenant_id),
+    }
+
+
+@router.get("/tenants/{tenant_id}/prompt")
+async def tenant_prompt_get(request: Request, tenant_id: TenantId) -> dict[str, Any]:
+    return _prompt_state(request, _tenant_or_404(request, tenant_id))
+
+
+@router.post("/tenants/{tenant_id}/prompt/preview")
+async def tenant_prompt_preview(request: Request, tenant_id: TenantId, body: PromptLayersIn) -> dict[str, Any]:
+    """Compila o prompt com o rascunho do editor SEM gravar nada."""
+    draft = _with_layers(_tenant_or_404(request, tenant_id), body.playbook_override, body.custom_instructions)
+    state = _prompt_state(request, draft)
+    state.pop("revisions", None)
+    return state
+
+
+@router.put("/tenants/{tenant_id}/prompt")
+async def tenant_prompt_save(request: Request, tenant_id: TenantId, body: PromptSaveIn) -> Any:
+    current = _tenant_or_404(request, tenant_id)
+    if body.confirm_tenant_id.strip() != tenant_id:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Confirmação inválida: digite exatamente '{tenant_id}' para aplicar a alteração do prompt.",
+        )
+    revision = _backup_prompt_layers(request, current)
+    updated = _with_layers(current, body.playbook_override, body.custom_instructions)
+    result = await _save_tenant(request, updated.model_dump(mode="json"), create=False, path_id=tenant_id)
+    if isinstance(result, JSONResponse):
+        return result
+    saved = _tenant_or_404(request, tenant_id)
+    logger.info("System prompt (camadas 2/3) atualizado tenant=%s backup=%s", tenant_id, revision)
+    return {**result, "prompt": _prompt_state(request, saved), "backup_revision": revision}
 
 
 # --------------------------------------------------------------------------- #

@@ -23,7 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.agent.state import AgentIntent, ConversationStage
 from src.core.schemas import Segment
-from src.tools.catalog import resolve_metropolitan_neighborhood
+from src.tools.geo import resolve_neighborhood
 from src.tools.handoff import HandoffReason
 from src.tools.results import ToolResult, normalize_text
 
@@ -262,19 +262,32 @@ def _strip_quoted_header(text: str) -> str:
     return cleaned or text
 
 
-def extract_lead_attributes(text: str, segment: Segment = Segment.GENERIC) -> dict[str, str]:
-    """Extrai atributos comerciais estruturados do texto do lead (determinístico)."""
+def extract_lead_attributes(
+    text: str,
+    segment: Segment = Segment.GENERIC,
+    *,
+    neighborhoods: dict[str, str] | None = None,
+    known_cities: list[str] | None = None,
+) -> dict[str, str]:
+    """Extrai atributos comerciais estruturados do texto do lead (determinístico).
+
+    `neighborhoods`/`known_cities` vêm do PRÓPRIO tenant (gazetteer e zonas de entrega), mantendo
+    o motor agnóstico de região. Sem eles, usa apenas um mapa mínimo de cidades legado.
+    """
     unquoted = _strip_quoted_header(text)
     norm = f" {normalize_text(unquoted)} "
     attrs: dict[str, str] = {}
 
-    # Cidades e Bairros da Região Metropolitana de Belém
-    for token, canonical_city in _CITY_MAP.items():
+    # Cidades (zonas do tenant quando informadas) e bairros (gazetteer do tenant)
+    city_map = (
+        {normalize_text(c): c for c in known_cities if c} if known_cities else _CITY_MAP
+    )
+    for token in sorted(city_map, key=len, reverse=True):
         if f" {token} " in norm:
-            attrs["cidade"] = canonical_city
+            attrs["cidade"] = city_map[token]
             break
 
-    nb_match = resolve_metropolitan_neighborhood(unquoted)
+    nb_match = resolve_neighborhood(unquoted, neighborhoods)
     if nb_match is not None:
         neighborhood_label, parent_city = nb_match
         attrs["bairro"] = neighborhood_label
@@ -364,10 +377,19 @@ class JEVGuard:
     def __init__(self, *, enabled: bool = True) -> None:
         self.enabled = enabled
 
-    def analyze(self, text: str, *, segment: Segment = Segment.GENERIC) -> JEVDecision:
+    def analyze(
+        self,
+        text: str,
+        *,
+        segment: Segment = Segment.GENERIC,
+        neighborhoods: dict[str, str] | None = None,
+        known_cities: list[str] | None = None,
+    ) -> JEVDecision:
         """Classifica a mensagem do turno e identifica gatilhos imediatos de handoff."""
         norm = f" {normalize_text(text)} "
-        attrs = extract_lead_attributes(text, segment)
+        attrs = extract_lead_attributes(
+            text, segment, neighborhoods=neighborhoods, known_cities=known_cities
+        )
 
         # 1. Emergência clínica (prioridade máxima absoluta)
         for pattern in _EMERGENCY_PATTERNS:

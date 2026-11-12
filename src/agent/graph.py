@@ -536,6 +536,29 @@ class SalesAgentRunner:
         except Exception:  # noqa: BLE001
             logger.debug("Falha não-crítica ao enviar mark_seen para %s", mask_phone(batch.contact_phone))
 
+    @staticmethod
+    def _audio_message_ids(batch: MessageBatch) -> list[str]:
+        return [m.message_id for m in batch.messages if m.type is MessageType.AUDIO]
+
+    @staticmethod
+    def _listening_delay_seconds(batch: MessageBatch) -> float:
+        """Pausa de "escuta" após o recibo de áudio ouvido: metade da duração somada, entre 1s e 4s."""
+        total = sum(
+            (m.media.duration_seconds or 0.0)
+            for m in batch.messages
+            if m.type is MessageType.AUDIO and m.media is not None
+        )
+        if total <= 0:
+            return 1.5
+        return round(min(max(total * 0.5, 1.0), 4.0), 2)
+
+    async def _safe_mark_played(self, gateway: WhatsAppGateway, batch: MessageBatch, audio_ids: list[str]) -> None:
+        try:
+            target = batch.last_message.chat_id or batch.contact_phone
+            await gateway.mark_played(batch.session_id, target, audio_ids)
+        except Exception:  # noqa: BLE001
+            logger.debug("Falha não-crítica ao enviar recibo de áudio ouvido para %s", mask_phone(batch.contact_phone))
+
     async def _safe_set_typing(self, gateway: WhatsAppGateway, batch: MessageBatch) -> None:
         try:
             target = batch.last_message.chat_id or batch.contact_phone
@@ -553,9 +576,30 @@ class SalesAgentRunner:
             logger.debug("Falha não-crítica ao enviar reação (%s) para %s", emoji, mask_phone(batch.contact_phone))
 
     async def _safe_mark_seen_and_typing(self, gateway: WhatsAppGateway, batch: MessageBatch) -> None:
-        """Fluxo humanizado pré-turno: 1) Blue ticks (mark_seen) -> 2) Pausa 500-1000ms -> 3) Digitando..."""
-        await self._safe_mark_seen(gateway, batch)
-        delay = self._reading_delay_seconds(batch)
+        """Fluxo humanizado pré-turno.
+
+        Texto:  1) Blue ticks (mark_seen) -> 2) Pausa de leitura 500-1000ms -> 3) Digitando...
+        Áudio:  1) Blue ticks dos textos do lote (se houver) -> 2) Recibo "played" (microfone azul)
+                -> 3) Pausa de escuta proporcional ao áudio -> 4) Digitando...
+        """
+        audio_ids = self._audio_message_ids(batch)
+        if not audio_ids:
+            await self._safe_mark_seen(gateway, batch)
+            delay = self._reading_delay_seconds(batch)
+            if delay > 0:
+                await asyncio.sleep(delay)
+            await self._safe_set_typing(gateway, batch)
+            return
+
+        text_ids = [mid for mid in batch.message_ids if mid not in set(audio_ids)]
+        if text_ids:
+            try:
+                target = batch.last_message.chat_id or batch.contact_phone
+                await gateway.mark_seen(batch.session_id, target, text_ids)
+            except Exception:  # noqa: BLE001
+                logger.debug("Falha não-crítica ao enviar mark_seen para %s", mask_phone(batch.contact_phone))
+        await self._safe_mark_played(gateway, batch, audio_ids)
+        delay = self._listening_delay_seconds(batch)
         if delay > 0:
             await asyncio.sleep(delay)
         await self._safe_set_typing(gateway, batch)

@@ -39,7 +39,7 @@ from src.gateways.astracalls import AstraCallsGateway
 from src.gateways.base import SendResult, WhatsAppGateway
 from src.gateways.waha import WahaGateway
 from src.tools.calendar import CalendarService, InMemoryBookingRepository
-from src.tools.catalog import CatalogService, resolve_metropolitan_neighborhood
+from src.tools.catalog import CatalogService, resolve_neighborhood
 from src.tools.handoff import AIPauseRegistry, HandoffService
 from src.tools.tenant_data import JsonTenantDataStore
 
@@ -322,9 +322,13 @@ async def test_resolve_metropolitan_neighborhood_recognizes_belem_and_ananindeua
     expected_neighborhood: str,
     expected_city: str,
 ):
-    resolved = resolve_metropolitan_neighborhood(query_text)
+    # O gazetteer agora pertence ao PRÓPRIO tenant (Camada 3 de dados), não ao código global
+    neighborhoods = store.get("companhia-dos-sonhos").delivery.neighborhoods
+    resolved = resolve_neighborhood(query_text, neighborhoods)
     assert resolved is not None
     assert resolved == (expected_neighborhood, expected_city)
+    # Sem gazetteer (outro cliente/região), nada é inferido
+    assert resolve_neighborhood(query_text, {}) is None
 
     catalog = CatalogService(store, clock=_fixed_clock)
     res = await catalog.get_delivery_info("companhia-dos-sonhos", query_text)

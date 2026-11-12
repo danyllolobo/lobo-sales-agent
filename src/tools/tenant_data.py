@@ -138,6 +138,13 @@ class DeliveryZone(_Strict):
 
 class DeliveryConfig(_Strict):
     zones: list[DeliveryZone] = Field(default_factory=list)
+    # Gazetteer de bairros/regiões do PRÓPRIO cliente: {"Tapanã": "Belém", "Cidade Nova": "Ananindeua"}.
+    # A cidade deve coincidir com uma cidade cadastrada nas zonas para herdar frete e prazo.
+    neighborhoods: dict[str, str] = Field(default_factory=dict)
+    # Viés regional para geocodificação aberta (ex.: "Belém, Pará"). Opcional.
+    region_hint: str | None = None
+    # Cliente pode retirar na loja quando o endereço estiver fora da área de entrega
+    pickup_available: bool = True
 
 
 # --------------------------------------------------------------------------- #

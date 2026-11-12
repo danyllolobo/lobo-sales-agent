@@ -280,6 +280,26 @@ class WahaGateway(WhatsAppGateway):
             body["messageIds"] = message_ids
         await self._request("POST", "/api/sendSeen", json=body, log_contact=to)
 
+    async def mark_played(self, session_id: str, to: str, message_ids: list[str]) -> None:
+        """Microfone azul (ack=PLAYED): `POST /api/sendSeen` com `type: "played"` (engines GOWS/NOWEB).
+
+        Versões/engines do WAHA sem suporte recusam o campo: cai para a leitura comum (blue ticks).
+        """
+        if not message_ids:
+            await self.mark_seen(session_id, to, message_ids)
+            return
+        body: dict[str, Any] = {
+            "session": session_id,
+            "chatId": self.chat_id_for(to),
+            "messageIds": message_ids,
+            "type": "played",
+        }
+        try:
+            await self._request("POST", "/api/sendSeen", json=body, log_contact=to)
+        except GatewayError as exc:
+            logger.info("WAHA sem suporte a recibo 'played' (%s); usando leitura comum", exc.message)
+            await self.mark_seen(session_id, to, message_ids)
+
     async def react(self, session_id: str, chat_id: str, message_id: str, emoji: str) -> None:
         await self._request(
             "POST",

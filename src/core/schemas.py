@@ -410,7 +410,9 @@ class IncomingMessage(_PhoneMaskedModel):
             case MessageType.LOCATION:
                 loc = self.location
                 label = (loc.address or loc.name) if loc else None
-                base = f"[localização] {label}" if label else "[localização compartilhada]"
+                coords = f" (coordenadas: {loc.latitude:.6f}, {loc.longitude:.6f})" if loc else ""
+                # Com endereço legível, ele basta; sem endereço, as coordenadas permitem geocodificação reversa
+                base = f"[localização] {label}" if label else f"[localização compartilhada{coords}]"
             case _:
                 base = self.text or "[mensagem não suportada]"
 
@@ -1150,7 +1152,10 @@ class TenantConfig(BaseModel):
 
     # Personalização livre de nicho/categoria e instruções específicas da empresa
     niche_name: str | None = None
+    # Camada 3 do System Prompt (DNA exclusivo do cliente)
     custom_instructions: str | None = None
+    # Camada 2 do System Prompt: substitui o playbook padrão do segmento apenas para este cliente
+    playbook_override: str | None = None
 
     # Plano comercial e franquia mensal de atendimentos/turnos
     plan_tier: PlanTier = "pro"

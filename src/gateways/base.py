@@ -159,6 +159,10 @@ class WhatsAppGateway(ABC):
     async def mark_seen(self, session_id: str, to: str, message_ids: list[str]) -> None:
         """Marca mensagens como lidas."""
 
+    async def mark_played(self, session_id: str, to: str, message_ids: list[str]) -> None:
+        """Recibo de "áudio ouvido" (microfone azul). Padrão: provedor sem suporte -> leitura comum."""
+        await self.mark_seen(session_id, to, message_ids)
+
     async def react(self, session_id: str, chat_id: str, message_id: str, emoji: str) -> None:
         """Reage a uma mensagem recebida com um emoji (ex.: '👍', '❤️', '🙏'). Best-effort."""
         return None

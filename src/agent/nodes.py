@@ -112,7 +112,10 @@ class _RealtimePriceArgs(BaseModel):
 class _DeliveryInfoArgs(BaseModel):
     city: str = Field(
         min_length=2,
-        description="Nome da cidade para consultar taxa e prazo de entrega (ex.: 'Belém', 'Ananindeua', 'Castanhal').",
+        description=(
+            "Local exatamente como o cliente falou: cidade, bairro (com a cidade se ele disse), ponto de "
+            "referência, CEP ou coordenadas. Ex.: 'Cidade Nova, Ananindeua', 'Tapanã', '66000-000'."
+        ),
     )
 
 
@@ -288,8 +291,10 @@ def build_tenant_tools(
             coroutine=_get_delivery_info,
             name="get_delivery_info",
             description=(
-                "Consulta se o tenant entrega na cidade informada, retornando a taxa de entrega "
-                "(fee_formatted) e o prazo em dias (lead_time_formatted)."
+                "Consulta frete (fee_formatted) e prazo (lead_time_formatted) para o local citado pelo cliente: "
+                "cidade, bairro, ponto de referência, CEP ou localização. Resolve bairros e cidades sozinha. "
+                "Se o local não for identificado ou estiver fora da área, NÃO transfira: siga a agent_instruction "
+                "(pergunte a cidade/CEP ou ofereça retirada)."
             ),
             args_schema=_DeliveryInfoArgs,
         ),
@@ -471,17 +476,15 @@ class DeterministicSalesChatModel(BaseChatModel):
                 query_text = " ".join(product_lines) if product_lines else user_text
             add_call("search_catalog", {"query": query_text})
 
-        # 3. Entrega / Frete / Bairros da Região Metropolitana de Belém
+        # 3. Entrega / Frete / Bairros (resolvidos pelo gazetteer e zonas do PRÓPRIO tenant)
         attrs = extract_lead_attributes(user_text)
         bairro = attrs.get("bairro")
         city = attrs.get("cidade")
         if bairro or any(k in norm for k in (" entrega", " entregam", " frete", " enviam")):
             target_city = bairro or city
             if not target_city:
-                # Tenta capturar palavra após "em " ou "para "
-                m = re.search(r"\b(?:em|para)\s+([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+)?)", user_text)
-                if m:
-                    target_city = m.group(1).strip("?.!, ")
+                # Passa o texto do cliente: a ferramenta resolve bairro/cidade/CEP de forma genérica
+                target_city = " ".join(user_text.split())[:200]
             if target_city:
                 add_call("get_delivery_info", {"city": target_city})
 
@@ -761,6 +764,7 @@ class DeterministicSalesChatModel(BaseChatModel):
 
         parts: list[str] = [greeting]
         presented_featured_highlights = False
+        closing_question: str | None = None
 
         for p in payloads:
             tool_name = p.get("tool")
@@ -867,12 +871,11 @@ class DeterministicSalesChatModel(BaseChatModel):
                 fee_fmt = data.get("fee_formatted", "")
                 lead_fmt = data.get("lead_time_formatted", "")
                 notes = data.get("notes")
-                if neighborhood and "segmento: `mattress`" in sys_text:
-                    deliv_line = (
-                        f"🚚 Entregamos no *{neighborhood}* sim, com frete *{fee_fmt}* e entrega rápida de *{lead_fmt}*! "
-                        "E como a nossa loja fica aqui na *Av. Tavares Bastos, 1246F na Marambaia*, pertinho de você, "
-                        "você também pode dar uma passada aqui para deitar nele e testar o conforto pessoalmente!"
-                    )
+                store_ref = str(data.get("store_reference") or "").replace("[DEMO]", "").strip()
+                if neighborhood:
+                    deliv_line = f"🚚 Entregamos no *{neighborhood}* sim, com frete *{fee_fmt}* e prazo de *{lead_fmt}*!"
+                    if store_ref:
+                        deliv_line += f" E se preferir ver de perto, nossa loja fica na *{store_ref}*."
                 else:
                     deliv_line = (
                         f"🚚 *Entrega em {city}:* frete *{fee_fmt}*, com prazo de *{lead_fmt}*."
@@ -880,6 +883,19 @@ class DeterministicSalesChatModel(BaseChatModel):
                     if notes:
                         deliv_line += f" ({notes})"
                 parts.append(deliv_line)
+
+            elif tool_name == "get_delivery_info" and p.get("reason") == "outside_delivery_area":
+                served = ", ".join(data.get("served_cities") or [])
+                resolved = data.get("resolved_city") or "sua cidade"
+                line = f"Hoje a nossa entrega padrão atende {served}, e {resolved} fica fora dessa rota."
+                if data.get("pickup_available") and data.get("store_location"):
+                    store_loc = str(data["store_location"]).replace("[DEMO]", "").strip()
+                    line += f" Você pode retirar com a gente na *{store_loc}*."
+                parts.append(line)
+                closing_question = "Prefere retirar na loja ou quer que eu verifique uma entrega especial para você?"
+
+            elif tool_name == "get_delivery_info" and p.get("reason") == "location_unresolved":
+                closing_question = "Me diz a cidade (ou o CEP) para eu confirmar o frete e o prazo certinho?"
 
             elif tool_name == "get_business_info" and p.get("status") == "ok":
                 content = data.get("content")
@@ -910,7 +926,9 @@ class DeterministicSalesChatModel(BaseChatModel):
                     f"✅ Agendamento confirmado para *{service_name}* em *{label}*! Te esperamos lá."
                 )
 
-        if len(parts) == 1:
+        if closing_question:
+            parts.append(closing_question)
+        elif len(parts) == 1:
             parts.append("Como posso te ajudar hoje?")
         elif presented_featured_highlights:
             if "segmento: `psychology`" in sys_text:
@@ -1177,7 +1195,12 @@ class AgentNodes:
         if spoken_name:
             lead.name = spoken_name
             lead.attributes["name_confirmed"] = "sim"
-        decision = self._jev.analyze(user_text, segment=tenant.tenant.segment)
+        decision = self._jev.analyze(
+            user_text,
+            segment=tenant.tenant.segment,
+            neighborhoods=tenant.delivery.neighborhoods,
+            known_cities=[c for z in tenant.delivery.zones for c in z.cities],
+        )
         if decision.extracted_attributes:
             lead.attributes.update(decision.extracted_attributes)
             if decision.extracted_attributes.get("origem_anuncio") == "meta_ads" and not lead.source:
