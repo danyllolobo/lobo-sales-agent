@@ -112,8 +112,17 @@ def resolve_metropolitan_neighborhood(raw_text: str) -> tuple[str, str] | None:
 PRICE_SHOW_INSTRUCTION = (
     "Use EXATAMENTE os valores formatados retornados (campos *_formatted). "
     "Não arredonde, não some, não ofereça descontos além do retornado. "
-    "Apresente SOMENTE os modelos retornados que correspondem ao tamanho solicitado pelo cliente e estão em estoque (in_stock=True). "
-    "NUNCA ofereça tamanho diferente do pedido (ex.: não envie Queen se o cliente pediu King) e NUNCA invente avisos de 'última unidade vendida' ou 'encomenda de fábrica'."
+    "Apresente os modelos retornados que correspondem ao tamanho solicitado pelo cliente que estão em estoque. "
+    "NUNCA invente preços ou descontos fora da tabela."
+)
+
+OUT_OF_STOCK_INSTRUCTION = (
+    "AVISO DE ESTOQUE: O modelo/tamanho pesquisado pelo cliente está atualmente esgotado para pronta-entrega na loja física (in_stock=False). "
+    "Conduta comercial obrigatória de consultor humano: "
+    "1. Informe com simpatia e honestidade que o modelo nesse tamanho está temporariamente sem estoque de pronta-entrega imediata na loja física. "
+    "2. Você pode informar o valor oficial formatado da tabela normalmente (ex.: campos price_formatted e installments_formatted). "
+    "3. NUNCA acione o gerente comercial nem dê handoff imediatamente por causa de estoque! "
+    "4. Pergunte com naturalidade se o cliente gostaria que você consulte o prazo de reposição/encomenda com a fábrica ou se prefere conhecer opções a pronta-entrega em outro tamanho (como Casal)."
 )
 
 FEATURED_FALLBACK_INSTRUCTION = (
@@ -285,8 +294,15 @@ class CatalogService:
                 instruction=FEATURED_FALLBACK_INSTRUCTION,
             )
 
+        has_in_stock = any(item.in_stock for _, item in ranked)
+        instruction = PRICE_SHOW_INSTRUCTION if has_in_stock else OUT_OF_STOCK_INSTRUCTION
         results = [self._item_summary(catalog, item, score) for score, item in ranked[:limit]]
-        return ToolResult.success(tool, tenant_id, {"results": results, "total": len(ranked)}, instruction=PRICE_SHOW_INSTRUCTION)
+        return ToolResult.success(
+            tool,
+            tenant_id,
+            {"results": results, "total": len(ranked), "has_in_stock": has_in_stock},
+            instruction=instruction,
+        )
 
     # -------------------------------------------------------------- preço
     @tool_guard("get_realtime_price")

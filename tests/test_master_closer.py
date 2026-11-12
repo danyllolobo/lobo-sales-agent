@@ -945,5 +945,53 @@ async def test_waha_s3_minio_audio_download_and_human_name_conduct(
     assert turn2.lead.attributes.get("name_confirmed") == "sim"
 
 
+async def test_out_of_stock_item_handled_consultatively_without_handoff(
+    store: JsonTenantDataStore,
+    fake_redis,
+):
+    """Garante que quando um produto/tamanho estiver sem estoque (in_stock=False),
+    o agente NÃO faz handoff precipitado, informa o preço e oferece consulta de encomenda
+    ou outro tamanho disponível consultivamente."""
+    runner = _build_runner(store, fake_redis)
+
+    result = await runner.handle_batch(
+        MessageBatch(
+            tenant_id="companhia-dos-sonhos",
+            contact_phone="5591982054450",
+            session_id="LoboAds",
+            messages=[
+                IncomingMessage(
+                    message_id="MSG_OOS_1",
+                    tenant_id="companhia-dos-sonhos",
+                    provider=Provider.WAHA,
+                    session_id="LoboAds",
+                    contact_phone="5591982054450",
+                    contact_name="Danyllo",
+                    type=MessageType.TEXT,
+                    text="Vocês têm colchão de Solteiro?",
+                )
+            ],
+            first_received_at=FIXED_NOW,
+            flushed_at=FIXED_NOW,
+        )
+    )
+
+    # 1. NÃO deve fazer handoff para o gerente comercial!
+    assert result.human_handoff_requested is False
+    assert result.handoff_reason is None
+
+    # 2. Deve apresentar o modelo e o preço oficial
+    reply = result.reply_text or ""
+    assert "Colchão Ortopédico Solteiro" in reply
+    assert "899,00" in reply
+
+    # 3. Deve avisar com transparência que está esgotado / sem estoque para pronta entrega
+    assert "esgotado" in reply.lower() or "sem estoque" in reply.lower()
+
+    # 4. Deve oferecer alternativas consultivas (encomenda de fábrica ou outro tamanho)
+    assert "fábrica" in reply.lower() or "casal" in reply.lower()
+
+
+
 
 

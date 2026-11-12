@@ -10,9 +10,36 @@
     "active": true,
     "llm_model": "gemini-3.8-flash",
     "plan_tier": "pro",
+    "monthly_turn_limit": 2500,
     "followup_enabled": false,
-    "followup_delay_minutes": 120,
+    "followup_delay_minutes": 1,
     "followup_max_attempts": 1,
+    "followup_steps": [
+      {
+        "step": 1,
+        "delay_minutes": 1,
+        "label": "1º Toque — Mesmo Dia (Retomada Quente)",
+        "strategy": "warm_check"
+      },
+      {
+        "step": 2,
+        "delay_minutes": 1440,
+        "label": "2º Toque — Dia Seguinte (+1 dia)",
+        "strategy": "value_reinforce"
+      },
+      {
+        "step": 3,
+        "delay_minutes": 4320,
+        "label": "3º Toque — Reativação Consultiva (+3 dias)",
+        "strategy": "objection_break"
+      },
+      {
+        "step": 4,
+        "delay_minutes": 10080,
+        "label": "4º Toque — Despedida Sem Pressão (+7 dias)",
+        "strategy": "breakup"
+      }
+    ],
     "split_messages": true
   },
   "business_info": {
@@ -250,7 +277,7 @@
         },
         "variants": [],
         "featured": false,
-        "in_stock": true,
+        "in_stock": false,
         "active": true
       }
     ]

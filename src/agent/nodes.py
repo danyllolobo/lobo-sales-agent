@@ -815,20 +815,29 @@ class DeterministicSalesChatModel(BaseChatModel):
                     attrs = top.get("attributes") or {}
                     medidas = attrs.get("medidas")
                     firmeza = attrs.get("firmeza")
+                    in_stock = top.get("in_stock", True)
                     details = ", ".join(filter(None, [medidas, f"firmeza {firmeza}" if firmeza else None]))
-                    header = f"Temos o *{name}* (`{item_id}`)"
+                    if in_stock:
+                        header = f"Temos o *{name}* (`{item_id}`)"
+                    else:
+                        header = f"No tamanho solicitado, o *{name}* (`{item_id}`)"
                     if details:
                         header += f" ({details})"
                     if top.get("price_available"):
                         price_fmt = top.get("price_formatted")
                         inst_fmt = top.get("installments_formatted")
                         cash_fmt = top.get("cash_price_formatted")
-                        price_line = f"por *{price_fmt}*"
+                        price_line = f"sai por *{price_fmt}*"
                         if inst_fmt:
                             price_line += f" (em até *{inst_fmt}*)"
                         if cash_fmt:
                             price_line += f" ou *{cash_fmt}* à vista"
-                        parts.append(f"{header} {price_line}.")
+                        if not in_stock:
+                            parts.append(
+                                f"{header} {price_line}, mas no momento este modelo está temporariamente esgotado para pronta-entrega na loja física."
+                            )
+                        else:
+                            parts.append(f"{header} {price_line}.")
                         if top.get("price_note"):
                             parts.append(f"📌 *Observação:* {top['price_note']}")
                     else:
@@ -935,7 +944,18 @@ class DeterministicSalesChatModel(BaseChatModel):
                         "(solteiro, casal, queen ou king) e qual a sua preferência de *conforto* (mais firme para a coluna ou mais macio com molas ensacadas)?"
                     )
         elif not any(p.get("tool") in ("check_available_slots", "create_booking") for p in payloads):
-            if "segmento: `generic`" in sys_text:
+            any_out_of_stock = any(
+                p.get("tool") == "search_catalog"
+                and p.get("data", {}).get("results")
+                and all(not r.get("in_stock", True) for r in p["data"]["results"])
+                for p in payloads
+            )
+            if any_out_of_stock:
+                parts.append(
+                    "Você gostaria que eu verifique a previsão de encomenda/reposição com a fábrica para você "
+                    "ou prefere conhecer as opções a pronta-entrega no tamanho Casal?"
+                )
+            elif "segmento: `generic`" in sys_text:
                 parts.append("Quer agendar uma reunião rápida de diagnóstico para montarmos o plano ideal para você?")
             else:
                 parts.append("Gostaria de agendar uma visita à nossa loja para experimentar pessoalmente ou prefere já garantir o seu?")
