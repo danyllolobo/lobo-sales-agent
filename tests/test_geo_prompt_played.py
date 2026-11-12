@@ -282,9 +282,11 @@ def test_prompt_editor_api_requires_confirmation_and_keeps_history(tmp_path):
     with TestClient(create_app(settings)) as client:
         base = f"/api/admin/tenants/{TENANT}/prompt"
         state = client.get(base).json()
-        assert "<anti_hallucination_guardrails>" in state["kernel"]
+        assert "kernel" not in state  # Kernel é global: não aparece na tela do cliente
         assert "LOJA DE COLCHÕES" in state["segment_default_playbook"]
         assert state["revisions"] == []
+        kernel = client.get("/api/admin/kernel").json()
+        assert "<anti_hallucination_guardrails>" in kernel["kernel"] and kernel["editable"] is False
 
         draft = {"playbook_override": "Playbook de teste para {display_name}.", "custom_instructions": "Sempre ofereça brinde."}
         preview = client.post(f"{base}/preview", json=draft).json()

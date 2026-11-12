@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any, Literal
 
@@ -508,7 +509,6 @@ def _prompt_state(request: Request, tenant: TenantData) -> dict[str, Any]:
     return {
         "tenant_id": tenant.tenant_id,
         "segment": tenant.tenant.segment.value,
-        "kernel": kernel_prompt(),
         "segment_default_playbook": default_segment_playbook(tenant.tenant.segment).replace(
             "{display_name}", tenant.tenant.display_name
         ),
@@ -676,6 +676,51 @@ async def followup_run(request: Request, body: FollowUpRunIn | None = None) -> d
         dry_run=opts.dry_run,
         force=opts.force,
     )
+
+
+@router.get("/followup/status")
+async def followup_status(request: Request, tenant_id: str | None = None) -> dict[str, Any]:
+    """Status do agendador automático + fila: quem recebe o próximo toque e quando (sem enviar nada)."""
+    st = _state(request)
+    scheduler = getattr(st, "followup_scheduler", None)
+    preview = await st.followup.run_sweep(tenant_id=tenant_id or None, dry_run=True)
+    queue: list[dict[str, Any]] = []
+    for item in preview.get("eligible", []):
+        queue.append({**{k: item.get(k) for k in ("tenant_id", "phone_masked", "name", "attempt", "total_steps",
+                                                    "step_label", "strategy")}, "due_in_minutes": 0.0})
+    for item in preview.get("skipped", []):
+        if item.get("reason") == "delay_not_reached":
+            queue.append({
+                "tenant_id": item.get("tenant_id"),
+                "phone_masked": item.get("phone"),
+                "attempt": item.get("step"),
+                "strategy": item.get("strategy"),
+                "due_in_minutes": round(max(0.0, item["required_minutes"] - item["elapsed_minutes"]), 1),
+            })
+    queue.sort(key=lambda q: q.get("due_in_minutes") or 0)
+    reasons: dict[str, int] = {}
+    for item in preview.get("skipped", []):
+        reasons[item.get("reason", "?")] = reasons.get(item.get("reason", "?"), 0) + 1
+    return {
+        "scheduler": scheduler.status() if scheduler is not None else {"running": False},
+        "evaluated": preview.get("evaluated", 0),
+        "queue": queue[:50],
+        "skipped_reasons": reasons,
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Kernel global do agente (Camada 1) — independente de cliente, somente leitura
+# --------------------------------------------------------------------------- #
+@router.get("/kernel")
+async def kernel_get() -> dict[str, Any]:
+    text = kernel_prompt()
+    return {
+        "kernel": text,
+        "chars": len(text),
+        "blocks": re.findall(r"<([a-z_]+)>", text),
+        "editable": False,
+    }
 
 
 @router.post("/gateway/test-send")

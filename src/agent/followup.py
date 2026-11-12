@@ -17,6 +17,8 @@ Regras de Segurança:
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from collections.abc import Callable
 from datetime import datetime
@@ -31,6 +33,7 @@ from src.core.schemas import (
     LeadProfile,
     LeadStatus,
     OutgoingMessage,
+    Provider,
     Segment,
     TenantConfig,
     default_followup_steps,
@@ -58,7 +61,12 @@ def _extract_first_name(raw_name: str | None) -> str:
 
 
 def resolve_effective_steps(t_cfg: TenantConfig) -> list[FollowUpStep]:
-    """Retorna a lista de etapas progressivas do tenant, respeitando o teto do plano e overrides."""
+    """Retorna a lista de etapas progressivas do tenant, respeitando o teto do plano e overrides.
+
+    A tabela de etapas do painel (`followup_steps`) é a fonte da verdade: se ela foi configurada, todas as
+    suas etapas valem (limitadas ao teto do plano). `followup_max_attempts` só limita a régua padrão legada.
+    """
+    explicit_steps = bool(t_cfg.followup_steps) and "followup_steps" in t_cfg.model_fields_set
     steps = list(t_cfg.followup_steps) if t_cfg.followup_steps else default_followup_steps()
     if not steps:
         steps = default_followup_steps()
@@ -68,7 +76,8 @@ def resolve_effective_steps(t_cfg: TenantConfig) -> list[FollowUpStep]:
 
     plan_spec = PLAN_SPECS.get(t_cfg.plan_tier) or PLAN_SPECS["pro"]
     max_plan_steps = int(plan_spec.get("max_followup_steps") or 4)
-    limit = min(len(steps), max(1, t_cfg.followup_max_attempts), max(1, max_plan_steps))
+    attempts_cap = len(steps) if explicit_steps else max(1, t_cfg.followup_max_attempts)
+    limit = min(len(steps), attempts_cap, max(1, max_plan_steps))
     return steps[:limit]
 
 
@@ -287,13 +296,21 @@ class FollowUpService:
                 continue
 
             try:
-                gateway = self._gateway_resolver(t_cfg.whatsapp_provider)
-                session_id = t_cfg.whatsapp_session_id or gateway.default_session
+                provider = t_cfg.whatsapp_provider
+                raw_provider = lead.attributes.get("_wa_provider")
+                if raw_provider:
+                    with contextlib.suppress(ValueError):
+                        provider = Provider(raw_provider)
+                gateway = self._gateway_resolver(provider)
+                session_id = (
+                    lead.attributes.get("_wa_session") or t_cfg.whatsapp_session_id or gateway.default_session
+                )
                 outgoing = OutgoingMessage(
                     tenant_id=lead.tenant_id,
-                    provider=t_cfg.whatsapp_provider,
+                    provider=provider,
                     session_id=session_id,
                     contact_phone=lead.phone,
+                    chat_id=lead.attributes.get("_wa_chat_id") or None,
                     text=text,
                     simulate_typing=True,
                     typing_seconds=1.8,
@@ -331,4 +348,107 @@ class FollowUpService:
         }
 
 
-__all__ = ["FollowUpService", "build_followup_message", "resolve_effective_steps"]
+class FollowUpScheduler:
+    """Executa a varredura da régua automaticamente em segundo plano (antes só rodava pelo painel).
+
+    - Intervalo configurável (`FOLLOWUP_SWEEP_INTERVAL_SECONDS`, padrão 60s): um toque de "1 min" sai entre
+      1 e 2 minutos após o silêncio do lead.
+    - Trava distribuída no Redis (`SET NX EX`): com 2+ réplicas/workers, só uma varre por ciclo (sem duplicar envio).
+    - Falhas nunca derrubam o loop; o status fica disponível para o painel (`status()`).
+    """
+
+    LOCK_KEY = "lobo:followup:sweep_lock"
+
+    def __init__(
+        self,
+        service: FollowUpService,
+        *,
+        redis: Any | None = None,
+        interval_seconds: float = 60.0,
+        clock: Callable[[], datetime] = utcnow,
+    ) -> None:
+        self._service = service
+        self._redis = redis
+        self.interval_seconds = max(10.0, float(interval_seconds))
+        self._clock = clock
+        self._task: asyncio.Task[None] | None = None
+        self.last_run_at: datetime | None = None
+        self.last_result: dict[str, Any] | None = None
+        self.last_error: str | None = None
+        self.total_sent = 0
+
+    @property
+    def running(self) -> bool:
+        return self._task is not None and not self._task.done()
+
+    def start(self) -> None:
+        if not self.running:
+            self._task = asyncio.create_task(self._loop(), name="followup-scheduler")
+            logger.info("Régua de follow-up automática ativa (varredura a cada %.0fs)", self.interval_seconds)
+
+    async def stop(self) -> None:
+        if self._task is not None:
+            self._task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._task
+            self._task = None
+
+    async def _acquire_lock(self) -> bool:
+        if self._redis is None:
+            return True
+        try:
+            ttl = max(5, int(self.interval_seconds) - 2)
+            return bool(await self._redis.set(self.LOCK_KEY, "1", nx=True, ex=ttl))
+        except Exception:  # noqa: BLE001 - sem Redis, segue (instância única)
+            return True
+
+    async def run_once(self) -> dict[str, Any] | None:
+        if not await self._acquire_lock():
+            return None
+        try:
+            result = await self._service.run_sweep()
+        except Exception as exc:  # noqa: BLE001
+            self.last_error = f"{type(exc).__name__}: {exc}"[:300]
+            logger.exception("Falha na varredura automática de follow-up")
+            return None
+        self.last_run_at = self._clock()
+        self.last_result = {k: result.get(k) for k in ("evaluated", "eligible_count", "sent_count")}
+        self.last_error = None
+        self.total_sent += int(result.get("sent_count") or 0)
+        if result.get("sent_count"):
+            logger.info("Follow-up automático: %s mensagem(ns) enviada(s)", result["sent_count"])
+        return result
+
+    async def _loop(self) -> None:
+        await asyncio.sleep(5)  # deixa o app terminar de subir
+        while True:
+            await self.run_once()
+            await asyncio.sleep(self.interval_seconds)
+
+    def status(self) -> dict[str, Any]:
+        return {
+            "running": self.running,
+            "interval_seconds": self.interval_seconds,
+            "last_run_at": self.last_run_at.isoformat() if self.last_run_at else None,
+            "last_result": self.last_result,
+            "last_error": self.last_error,
+            "total_sent": self.total_sent,
+        }
+
+
+def reset_followup_cadence(lead: LeadProfile) -> bool:
+    """Lead respondeu: a régua recomeça do 1º toque na próxima vez que ele silenciar."""
+    changed = False
+    for key in ("followup_count", "last_followup_at", "last_followup_strategy"):
+        if lead.attributes.pop(key, None) is not None:
+            changed = True
+    return changed
+
+
+__all__ = [
+    "FollowUpScheduler",
+    "FollowUpService",
+    "build_followup_message",
+    "reset_followup_cadence",
+    "resolve_effective_steps",
+]

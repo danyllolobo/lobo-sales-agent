@@ -412,6 +412,15 @@ class SalesAgentRunner:
         t0 = time.perf_counter()
         turn_id = f"turn_{uuid.uuid4().hex[:12]}"
         lead, history = await self._conv_store.load(batch.tenant_id, batch.contact_phone)
+        # O lead respondeu: a régua de follow-up recomeça do 1º toque quando ele silenciar de novo
+        for fu_key in ("followup_count", "last_followup_at", "last_followup_strategy"):
+            lead.attributes.pop(fu_key, None)
+        # Canal real do lead (provedor/sessão/chat): o follow-up deve sair pelo MESMO número/sessão
+        if batch.provider is not Provider.SIMULATOR:
+            lead.attributes["_wa_provider"] = batch.provider.value
+            lead.attributes["_wa_session"] = batch.session_id
+            if batch.last_message.chat_id:
+                lead.attributes["_wa_chat_id"] = batch.last_message.chat_id
         gateway = self._safe_resolve_gateway(batch.provider)
 
         try:

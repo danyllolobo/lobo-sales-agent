@@ -415,3 +415,9 @@ pre.json {
 .prompt-card-layers .layer span { font-size: 12px; color: var(--muted); }
 .prc-summary { margin: 10px 0; padding-left: 18px; line-height: 1.6; }
 @media (max-width: 760px) { .prompt-card-layers { grid-template-columns: 1fr; } }
+
+/* ---------------------------------------------------------------- motor global do agente */
+.grid-engine { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.prompt-pre-tall { max-height: 640px; }
+.prompt-card-layers-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 1000px) { .grid-engine { grid-template-columns: 1fr; } }

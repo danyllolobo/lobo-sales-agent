@@ -246,11 +246,73 @@
   // ------------------------------------------------------------------ abas
   const loaders = {
     sandbox: () => loadSandbox(),
+    engine: () => loadEngine(),
     playground: () => renderChat(),
     tenants: () => (S.draft ? null : loadTenant($("#tn-select").value)),
     conversations: () => loadConversations(),
     webhooks: () => loadWebhooks(),
   };
+
+  // ------------------------------------------------------------------ motor global do agente (Kernel + régua)
+  const FU_STRATEGY_LABEL = Object.fromEntries(FOLLOWUP_STRATEGIES.map(([k, v]) => [k, v.split(" (")[0]]));
+  const FU_SKIP_LABEL = {
+    followup_disabled: "régua desligada no cliente",
+    waiting_ai_not_lead: "aguardando a IA responder o lead",
+    ai_paused: "IA pausada (humano atendendo)",
+    max_attempts_reached: "régua concluída",
+    plan_not_allowed: "plano sem follow-up",
+    tenant_inactive: "cliente inativo",
+    send_error: "falha de envio",
+  };
+  async function loadEngine() {
+    if (!S.kernelLoaded) {
+      const k = await api("GET", "/api/admin/kernel");
+      if (k.ok) {
+        S.kernelLoaded = true;
+        $("#kn-text").textContent = k.data.kernel;
+        $("#kn-meta").textContent = `🔒 somente leitura · ${k.data.chars.toLocaleString("pt-BR")} caracteres`;
+        $("#kn-blocks").innerHTML = k.data.blocks.map((b) => `<span class="chip">${esc(b)}</span>`).join("");
+      } else {
+        $("#kn-text").textContent = `Falha ao carregar o Kernel: ${k.error}`;
+      }
+    }
+    await loadFollowupStatus();
+  }
+  async function loadFollowupStatus(btn) {
+    const r = btn ? await act(btn, "Fila de follow-up atualizada", () => api("GET", "/api/admin/followup/status"), { silentOk: true })
+      : await api("GET", "/api/admin/followup/status");
+    if (!r.ok) { $("#fu-sched-body").textContent = r.error; return; }
+    const sc = r.data.scheduler || {};
+    const chip = $("#fu-sched-chip");
+    chip.className = `chip ${sc.running ? "chip-ok" : "chip-err"}`;
+    chip.textContent = sc.running ? `🟢 automática · a cada ${Math.round(sc.interval_seconds)}s` : "🔴 agendador parado";
+    const last = sc.last_run_at ? `${relTime(sc.last_run_at)} (${sc.last_result?.evaluated ?? 0} conversas avaliadas)` : "ainda não rodou";
+    const reasons = Object.entries(r.data.skipped_reasons || {}).filter(([k]) => k !== "delay_not_reached")
+      .map(([k, n]) => `${n}× ${esc(FU_SKIP_LABEL[k] || k)}`).join(" · ");
+    $("#fu-sched-body").innerHTML = `
+      <div class="kv"><span>Última varredura</span><strong>${esc(last)}</strong></div>
+      <div class="kv"><span>Enviados desde que o servidor subiu</span><strong>${esc(sc.total_sent ?? 0)}</strong></div>
+      ${sc.last_error ? `<div class="notice notice-warn">Último erro: ${esc(sc.last_error)}</div>` : ""}
+      ${reasons ? `<p class="muted">Fora da fila agora: ${reasons}</p>` : ""}
+      <p class="muted">Cada cliente liga a régua e define as etapas em <a href="#tenants" data-goto-tab="tenants">Clientes &amp; Catálogo</a>. O tempo de cada etapa conta a partir da última mensagem enviada.</p>`;
+    const q = r.data.queue || [];
+    $("#fu-queue").innerHTML = q.length ? q.map((it) => `
+      <div class="list-item">
+        <div class="grow"><strong>${esc(it.name || it.phone_masked)}</strong> <span class="muted small">${esc(it.tenant_id)}</span>
+          <div class="muted small">${esc(it.attempt)}º toque · ${esc(FU_STRATEGY_LABEL[it.strategy] || it.strategy || "")}</div></div>
+        <span class="chip ${it.due_in_minutes <= 0 ? "chip-warn" : ""}">${it.due_in_minutes <= 0 ? "envia na próxima varredura" : `em ${fmtMinutes(it.due_in_minutes)}`}</span>
+      </div>`).join("") : `<div class="empty">Nenhum lead aguardando follow-up agora.</div>`;
+  }
+  function fmtMinutes(m) {
+    if (m < 60) return `${Math.ceil(m)} min`;
+    if (m < 1440) return `${Math.round(m / 60)} h`;
+    return `${Math.round(m / 1440)} dia(s)`;
+  }
+  document.addEventListener("click", (ev) => {
+    const a = ev.target.closest("[data-goto-tab]");
+    if (a) { ev.preventDefault(); activateTab(a.dataset.gotoTab); }
+  });
+  $("#fu-sched-refresh").addEventListener("click", (ev) => loadFollowupStatus(ev.currentTarget));
   function activateTab(name) {
     if (!loaders[name]) name = "sandbox";
     $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
@@ -942,6 +1004,8 @@
           </div>
         </div>
         ${!planSpec.followup_allowed ? `<div class="notice notice-warn" style="margin-bottom:12px">🔒 <strong>Recurso bloqueado no Plano Essencial:</strong> A Régua de Follow-up Automático está disponível a partir do <strong>Plano Pro Vendas (R$ 1.690/mês)</strong>. Altere o Plano Comercial acima para ativar.</div>` : ""}
+        ${planSpec.followup_allowed && !t.followup_enabled ? `<div class="notice notice-warn" style="margin-bottom:12px">⏸️ <strong>Régua desligada para este cliente.</strong> As etapas abaixo só são enviadas depois que você marcar a opção “Ativar Régua de Follow-up Automático” e salvar.</div>` : ""}
+        ${planSpec.followup_allowed && t.followup_enabled ? `<div class="notice notice-info" style="margin-bottom:12px">🟢 <strong>Régua ativa.</strong> O servidor verifica a cada minuto e envia pelo mesmo número em que o lead conversou. Acompanhe a fila em <a href="#engine" data-goto-tab="engine">Motor do Agente</a>.</div>` : ""}
         <div class="chips" style="margin-bottom:12px">
           ${chk("tenant.followup_enabled", "Ativar Régua de Follow-up Automático para leads inativos deste cliente", !planSpec.followup_allowed ? "disabled" : "")}
         </div>
@@ -961,13 +1025,12 @@
     const l3Len = (t.custom_instructions || "").length;
     const promptCard = `
       <article class="card section">
-        <div class="card-head"><h2>🧠 System Prompt do Agente (camadas)</h2><button class="btn btn-primary btn-sm" data-act="open-prompt">🧠 Ver e editar prompt</button></div>
-        <div class="prompt-card-layers">
-          <div class="layer"><strong>🔒 Camada 1 · Kernel global</strong><span>Identidade humana, uso de ferramentas e anti-alucinação. Igual para todos os clientes (somente leitura).</span></div>
+        <div class="card-head"><h2>🧠 Prompt deste cliente (camadas 2 e 3)</h2><button class="btn btn-primary btn-sm" data-act="open-prompt">🧠 Ver e editar prompt</button></div>
+        <div class="prompt-card-layers prompt-card-layers-2">
           <div class="layer"><strong>✏️ Camada 2 · Playbook</strong><span>${t.playbook_override ? "Personalizado para este cliente" : `Padrão do segmento: ${esc(segLabel)}`}</span></div>
           <div class="layer"><strong>✏️ Camada 3 · Instruções da empresa</strong><span>${l3Len ? `${l3Len.toLocaleString("pt-BR")} caracteres cadastrados` : "Nenhuma instrução cadastrada"}</span></div>
         </div>
-        <p class="muted small" style="margin-top:10px">As alterações nas camadas 2 e 3 pedem confirmação, valem na hora para as conversas reais e a versão anterior fica no histórico.</p>
+        <p class="muted small" style="margin-top:10px">As alterações pedem confirmação, valem na hora para as conversas reais e a versão anterior fica no histórico. As regras globais (Kernel) ficam na aba <a href="#engine" data-goto-tab="engine">Motor do Agente</a>.</p>
       </article>`;
 
     $("#tn-editor").innerHTML = `
@@ -1269,7 +1332,6 @@
     $("#pr-l2-custom").checked = !!PR.original.l2;
     $("#pr-l2").value = PR.original.l2 || state.segment_default_playbook || "";
     $("#pr-l3").value = PR.original.l3 || "";
-    $("#pr-l1").textContent = state.kernel || "";
     $("#pr-compiled").textContent = state.compiled_preview || "";
     $("#pr-compiled-meta").textContent = state.compiled_chars ? `· ${state.compiled_chars.toLocaleString("pt-BR")} caracteres` : "";
     renderPrHistory(state.revisions);

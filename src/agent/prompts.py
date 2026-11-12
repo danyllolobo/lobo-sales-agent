@@ -306,7 +306,7 @@ def _summarize_conversation_memory(lead: LeadProfile, history: list[BaseMessage]
         known = ", ".join(
             f"{k}={v}"
             for k, v in sorted(lead.attributes.items())
-            if k not in ("llm_model", "whatsapp_push_name")
+            if k not in ("llm_model", "whatsapp_push_name") and not k.startswith("_")
         )
         if known:
             lines.append(f"preferencias_ja_identificadas_nao_repetir_pergunta=({known})")
@@ -394,7 +394,7 @@ def build_system_prompt(
         ", ".join(
             f"{k}={v}"
             for k, v in sorted(lead.attributes.items())
-            if k not in ("whatsapp_push_name",)
+            if k not in ("whatsapp_push_name",) and not k.startswith("_")
         )
         if lead.attributes
         else "nenhum atributo coletado ainda"

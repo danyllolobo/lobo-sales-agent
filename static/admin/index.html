@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="pt-BR" data-theme="dark">
 <head>
   <meta charset="utf-8">
@@ -48,6 +48,7 @@
 
   <nav class="tabs" role="tablist">
     <button class="tab active" data-tab="sandbox" role="tab">🛡️ <span>Segurança &amp; Conexões</span></button>
+    <button class="tab" data-tab="engine" role="tab">🧠 <span>Motor do Agente</span></button>
     <button class="tab" data-tab="playground" role="tab">💬 <span>Playground ao Vivo</span></button>
     <button class="tab" data-tab="tenants" role="tab">🏢 <span>Clientes &amp; Catálogo</span></button>
     <button class="tab" data-tab="conversations" role="tab">🤝 <span>Conversas &amp; Handoff</span></button>
@@ -55,6 +56,30 @@
   </nav>
 
   <main>
+    <!-- ================================================================ MOTOR GLOBAL DO AGENTE -->
+    <section id="tab-engine" class="pane">
+      <div class="grid grid-engine">
+        <article class="card">
+          <div class="card-head">
+            <h2>🔒 Kernel global do agente (Camada 1)</h2>
+            <span class="chip chip-lock" id="kn-meta">somente leitura</span>
+          </div>
+          <p class="muted small">Regras que valem para <strong>todos os clientes</strong>: identidade humana, uso correto das ferramentas e anti-alucinação. Ficam no código (versionadas) e não dependem de nenhum cliente. O playbook do segmento (Camada 2) e as instruções da empresa (Camada 3) são editados dentro de cada cliente.</p>
+          <div class="chips" id="kn-blocks"></div>
+          <pre id="kn-text" class="prompt-pre prompt-pre-tall">Carregando…</pre>
+        </article>
+        <article class="card">
+          <div class="card-head">
+            <h2>⏰ Régua de follow-up automática</h2>
+            <span class="chip" id="fu-sched-chip">…</span>
+          </div>
+          <div id="fu-sched-body" class="small"></div>
+          <div class="divider"></div>
+          <div class="row-between"><h3>Próximos toques</h3><button class="btn btn-sm" id="fu-sched-refresh">↻ Atualizar</button></div>
+          <div id="fu-queue" class="list"></div>
+        </article>
+      </div>
+    </section>
     <!-- ================================================================ ABA 1 -->
     <section id="tab-sandbox" class="pane active">
       <div class="grid grid-sandbox">
@@ -339,15 +364,14 @@
         <button class="icon-btn" id="pr-close" aria-label="Fechar">✕</button>
       </div>
       <div class="layer-legend">
-        <span class="chip chip-lock">🔒 Camada 1 · Kernel global (somente leitura, igual para todos os clientes)</span>
         <span class="chip chip-info">✏️ Camada 2 · Playbook do segmento</span>
         <span class="chip chip-ok">✏️ Camada 3 · DNA exclusivo da empresa</span>
+        <span class="chip chip-lock">As regras globais (Kernel) ficam na aba “Motor do Agente”</span>
       </div>
       <div class="subtabs" role="tablist">
         <button class="subtab active" data-prtab="l2">Camada 2 · Playbook</button>
         <button class="subtab" data-prtab="l3">Camada 3 · Instruções da empresa</button>
-        <button class="subtab" data-prtab="l1">🔒 Camada 1 · Kernel</button>
-        <button class="subtab" data-prtab="compiled">👁 Prompt compilado</button>
+        <button class="subtab" data-prtab="compiled">👁 Prompt final compilado</button>
         <button class="subtab" data-prtab="history">🕘 Versões</button>
       </div>
 
@@ -365,13 +389,8 @@
         <div class="row-between small"><span class="muted">Em conflito com o Kernel, o Kernel prevalece.</span><span id="pr-l3-count" class="mono muted"></span></div>
       </section>
 
-      <section class="prpane" data-prpane="l1">
-        <div class="notice notice-info">O Kernel garante identidade humana, uso correto das ferramentas e anti-alucinação para TODOS os clientes. Ele é mantido no código e não pode ser editado pelo painel.</div>
-        <pre id="pr-l1" class="prompt-pre"></pre>
-      </section>
-
       <section class="prpane" data-prpane="compiled">
-        <div class="row-between"><span class="muted small">Prévia com um lead fictício, no estágio de descoberta. <span id="pr-compiled-meta" class="mono"></span></span><button class="btn btn-sm" id="pr-preview">↻ Atualizar com o rascunho</button></div>
+        <div class="row-between"><span class="muted small">Texto final que o modelo recebe (regras globais + camadas deste cliente), com um lead fictício. <span id="pr-compiled-meta" class="mono"></span></span><button class="btn btn-sm" id="pr-preview">↻ Atualizar com o rascunho</button></div>
         <pre id="pr-compiled" class="prompt-pre"></pre>
       </section>
 

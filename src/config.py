@@ -96,6 +96,11 @@ class Settings(BaseSettings):
     # Desligada automaticamente em ENVIRONMENT=test.
     geo_lookup_enabled: bool = True
 
+    # --- Régua de follow-up automática (varredura em segundo plano) ---
+    # Desligada automaticamente em ENVIRONMENT=test.
+    followup_scheduler_enabled: bool = True
+    followup_sweep_interval_seconds: float = Field(default=60.0, ge=10.0, le=3600.0)
+
     # --- Dados dos tenants & handoff ---
     tenant_data_dir: Path = PROJECT_ROOT / "data" / "tenants"
     allow_demo_data: bool | None = None
@@ -202,6 +207,10 @@ class Settings(BaseSettings):
     @property
     def geo_enabled(self) -> bool:
         return self.geo_lookup_enabled and self.environment != "test"
+
+    @property
+    def followup_scheduler_active(self) -> bool:
+        return self.followup_scheduler_enabled and self.environment != "test"
 
     @property
     def effective_allow_demo(self) -> bool:

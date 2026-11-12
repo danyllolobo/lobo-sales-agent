@@ -32,7 +32,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from src.admin.api import router as admin_router
 from src.admin.control import ConversationControl
 from src.admin.playground import Playground
-from src.agent.followup import FollowUpService
+from src.agent.followup import FollowUpScheduler, FollowUpService
 from src.agent.graph import LeadConversationStore, SalesAgentRunner
 from src.agent.transcription import AudioTranscriber
 from src.buffer.message_queue import FlushHandler, MessageBuffer
@@ -218,10 +218,18 @@ def create_app(
             pause_registry=pause_registry,
             gateway_resolver=lambda p: get_gateway_for(app, p),
         )
+        app.state.followup_scheduler = FollowUpScheduler(
+            app.state.followup,
+            redis=redis,
+            interval_seconds=settings.followup_sweep_interval_seconds,
+        )
+        if settings.followup_scheduler_active:
+            app.state.followup_scheduler.start()
 
         try:
             yield
         finally:
+            await app.state.followup_scheduler.stop()
             await app.state.buffer.aclose()
             for gw in app.state.gateways.values():
                 await gw.aclose()
