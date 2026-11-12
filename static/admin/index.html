@@ -1,6 +1,5 @@
 <!doctype html>
 <html lang="pt-BR" data-theme="dark">
-
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -14,365 +13,460 @@
         var t = localStorage.getItem("lobo_theme");
         if (!t) t = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
         document.documentElement.setAttribute("data-theme", t);
-      } catch (e) { }
+      } catch (e) {}
     })();
   </script>
-  <link rel="stylesheet" href="/static/admin/app.css?v=0.7.0">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Fira+Sans:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="/static/admin/app.css?v=0.8.0">
 </head>
-
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <img class="logo logo-dark" src="/static/assets/loboads-logo-dark.png" alt="LoboAds Marketing Digital">
-      <img class="logo logo-light" src="/static/assets/loboads-logo-light.png" alt="LoboAds Marketing Digital">
-      <div class="brand-text">
-        <strong>Lobo AI Sales Agent</strong>
-        <span class="muted">Painel de Controle &amp; Playground</span>
-      </div>
-    </div>
-    <div class="topbar-status">
-      <span id="env-badge" class="badge">…</span>
-      <span id="sandbox-badge" class="badge">…</span>
-      <span id="version-badge" class="badge badge-ghost">v…</span>
-    </div>
-    <div class="topbar-actions">
-      <button id="btn-auth" class="icon-btn" title="Token de administrador"
-        aria-label="Token de administrador">🔑</button>
-      <button id="btn-theme" class="icon-btn theme-toggle" title="Alternar tema claro/escuro"
-        aria-label="Alternar tema">
-        <span class="sun">☀️</span><span class="moon">🌙</span>
-      </button>
-    </div>
-  </header>
+  <!-- Sprite de ícones (estilo Lucide, traço 2px). Uso: <svg class="ico"><use href="#i-nome"/></svg> -->
+  <svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" style="position:absolute;width:0;height:0;overflow:hidden">
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-cpu" viewBox="0 0 24 24"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/></symbol>
+    <symbol id="i-message" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+    <symbol id="i-message-circle" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></symbol>
+    <symbol id="i-building" viewBox="0 0 24 24"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+    <symbol id="i-rotate-ccw" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></symbol>
+    <symbol id="i-save" viewBox="0 0 24 24"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></symbol>
+    <symbol id="i-smartphone" viewBox="0 0 24 24"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></symbol>
+    <symbol id="i-zap" viewBox="0 0 24 24"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></symbol>
+    <symbol id="i-plug" viewBox="0 0 24 24"><path d="M12 22v-5M9 8V2M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/></symbol>
+    <symbol id="i-activity" viewBox="0 0 24 24"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-bag" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></symbol>
+    <symbol id="i-truck" viewBox="0 0 24 24"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></symbol>
+    <symbol id="i-store" viewBox="0 0 24 24"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/><path d="M22 7v3a2 2 0 0 1-2 2 2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24"><path d="M8 2v4M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></symbol>
+    <symbol id="i-repeat" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></symbol>
+    <symbol id="i-file-text" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8M16 13H8M16 17H8"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4M12 17h.01"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></symbol>
+    <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-x-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M6 3 20 12 6 21Z"/></symbol>
+    <symbol id="i-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></symbol>
+    <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></symbol>
+    <symbol id="i-tag" viewBox="0 0 24 24"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M3 12h.01M3 18h.01M3 6h.01M8 12h13M8 18h13M8 6h13"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20"/></symbol>
+    <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24"><path d="M13.832 16.568a1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.468.351a1 1 0 0 0-.292 1.233 14 14 0 0 0 6.392 6.384"/></symbol>
+    <symbol id="i-workflow" viewBox="0 0 24 24"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/></symbol>
+    <symbol id="i-gem" viewBox="0 0 24 24"><path d="M6 3h12l4 6-10 13L2 9Z"/><path d="M11 3 8 9l4 13 4-13-3-6"/><path d="M2 9h20"/></symbol>
+    <symbol id="i-hourglass" viewBox="0 0 24 24"><path d="M5 22h14M5 2h14M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></symbol>
+    <symbol id="i-percent" viewBox="0 0 24 24"><path d="M19 5 5 19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></symbol>
+    <symbol id="i-messages" viewBox="0 0 24 24"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></symbol>
+    <symbol id="i-copy-down" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 21V9"/><path d="m17 14-5-5-5 5"/><path d="M5 3h14"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></symbol>
+    <symbol id="i-handshake" viewBox="0 0 24 24"><path d="m11 17 2 2a1 1 0 1 0 3-3"/><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"/><path d="m21 3 1 11h-2"/><path d="M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3"/><path d="M3 4h8"/></symbol>
+  </svg>
 
-  <div id="auth-warning" class="banner banner-warning hidden">
-    ⚠️ <strong>Painel sem senha.</strong> Qualquer pessoa com o link pode editar preços, abrir o Sandbox e disparar
-    mensagens.
-    Defina <code>ADMIN_TOKEN</code> nas variáveis de ambiente do Easypanel (em produção o painel fica bloqueado sem
-    ele).
+  <a class="skip-link" href="#main">Pular para o conteúdo</a>
+
+  <div class="shell">
+    <aside class="sidebar topbar" aria-label="Navegação do painel">
+      <div class="brand">
+        <img class="logo logo-dark" src="/static/assets/loboads-logo-dark.png" alt="LoboAds Marketing Digital" width="144" height="36">
+        <img class="logo logo-light" src="/static/assets/loboads-logo-light.png" alt="LoboAds Marketing Digital" width="144" height="36">
+        <div class="brand-text">
+          <strong>Lobo AI Sales Agent</strong>
+          <span class="muted">Painel de Controle &amp; Playground</span>
+        </div>
+      </div>
+
+      <div class="topbar-actions">
+        <button id="btn-auth" class="icon-btn" type="button" title="Token de administrador" aria-label="Token de administrador">
+          <svg class="ico" aria-hidden="true"><use href="#i-key"/></svg>
+        </button>
+        <button id="btn-theme" class="icon-btn theme-toggle" type="button" title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro">
+          <span class="sun"><svg class="ico" aria-hidden="true"><use href="#i-sun"/></svg></span><span class="moon"><svg class="ico" aria-hidden="true"><use href="#i-moon"/></svg></span>
+        </button>
+      </div>
+
+      <nav class="tabs" aria-label="Seções">
+        <span class="nav-label">Seções</span>
+        <button class="tab active" data-tab="sandbox" type="button"><svg class="ico" aria-hidden="true"><use href="#i-shield"/></svg><span>Segurança &amp; Conexões</span></button>
+        <button class="tab" data-tab="engine" type="button"><svg class="ico" aria-hidden="true"><use href="#i-cpu"/></svg><span>Motor do Agente</span></button>
+        <button class="tab" data-tab="playground" type="button"><svg class="ico" aria-hidden="true"><use href="#i-message"/></svg><span>Playground ao Vivo</span></button>
+        <button class="tab" data-tab="tenants" type="button"><svg class="ico" aria-hidden="true"><use href="#i-building"/></svg><span>Clientes &amp; Catálogo</span></button>
+        <button class="tab" data-tab="conversations" type="button"><svg class="ico" aria-hidden="true"><use href="#i-users"/></svg><span>Conversas &amp; Handoff</span></button>
+        <button class="tab" data-tab="webhooks" type="button"><svg class="ico" aria-hidden="true"><use href="#i-link"/></svg><span>Webhooks &amp; Disparo</span></button>
+      </nav>
+
+      <div class="topbar-status" aria-label="Status do sistema">
+        <span class="nav-label">Status</span>
+        <span id="env-badge" class="badge">…</span>
+        <span id="sandbox-badge" class="badge">…</span>
+        <span id="version-badge" class="badge badge-ghost">v…</span>
+      </div>
+    </aside>
+
+    <div class="content">
+      <div id="auth-warning" class="banner banner-warning hidden" role="alert">
+        <svg class="ico" aria-hidden="true"><use href="#i-alert"/></svg>
+        <div><strong>Painel sem senha.</strong> Qualquer pessoa com o link pode editar preços, abrir o Sandbox e disparar mensagens.
+        Defina <code>ADMIN_TOKEN</code> nas variáveis de ambiente do Easypanel (em produção o painel fica bloqueado sem ele).</div>
+      </div>
+
+      <main id="main" tabindex="-1">
+        <!-- ================================================================ MOTOR GLOBAL DO AGENTE -->
+        <section id="tab-engine" class="pane" aria-labelledby="h-engine">
+          <header class="page-head">
+            <span class="page-head-icon"><svg class="ico" aria-hidden="true"><use href="#i-cpu"/></svg></span>
+            <div class="page-head-text">
+              <h1 id="h-engine">Motor do Agente</h1>
+              <p>Regras globais (Kernel) válidas para todos os clientes e a fila automática de follow-up.</p>
+            </div>
+          </header>
+          <div class="grid grid-engine">
+            <article class="card">
+              <div class="card-head">
+                <h2><svg class="ico" aria-hidden="true"><use href="#i-layers"/></svg>Kernel global do agente (Camada 1)</h2>
+                <span class="chip chip-lock" id="kn-meta">somente leitura</span>
+              </div>
+              <p class="muted small card-desc">Regras que valem para <strong>todos os clientes</strong>: identidade humana, uso correto das ferramentas e anti-alucinação. Ficam no código (versionadas) e não dependem de nenhum cliente. O playbook do segmento (Camada 2) e as instruções da empresa (Camada 3) são editados dentro de cada cliente.</p>
+              <div class="chips" id="kn-blocks"></div>
+              <pre id="kn-text" class="prompt-pre prompt-pre-tall">Carregando…</pre>
+            </article>
+            <article class="card">
+              <div class="card-head">
+                <h2><svg class="ico" aria-hidden="true"><use href="#i-clock"/></svg>Régua de follow-up automática</h2>
+                <span class="chip" id="fu-sched-chip">…</span>
+              </div>
+              <div id="fu-sched-body" class="small"></div>
+              <div class="divider"></div>
+              <div class="row-between"><h3>Próximos toques</h3><button class="btn btn-sm" id="fu-sched-refresh" type="button"><svg class="ico" aria-hidden="true"><use href="#i-refresh"/></svg>Atualizar</button></div>
+              <div id="fu-queue" class="list"></div>
+            </article>
+          </div>
+        </section>
+
+        <!-- ================================================================ ABA 1 -->
+        <section id="tab-sandbox" class="pane active" aria-labelledby="h-sandbox">
+          <header class="page-head">
+            <span class="page-head-icon"><svg class="ico" aria-hidden="true"><use href="#i-shield"/></svg></span>
+            <div class="page-head-text">
+              <h1 id="h-sandbox">Segurança &amp; Conexões</h1>
+              <p>Controle quem a IA atende, ajuste o agrupamento de mensagens e verifique as integrações.</p>
+            </div>
+          </header>
+          <div class="grid grid-sandbox">
+            <article class="card card-hero">
+              <div class="card-head">
+                <h2><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg>Trava de Segurança Sandbox</h2>
+                <span id="sandbox-state-chip" class="chip">…</span>
+              </div>
+              <label class="big-switch" id="sandbox-switch-wrap">
+                <input type="checkbox" id="sandbox-enabled">
+                <span class="track"><span class="thumb"></span></span>
+                <span class="big-switch-label">
+                  <strong id="sandbox-switch-title">…</strong>
+                  <small id="sandbox-switch-sub" class="muted">…</small>
+                </span>
+              </label>
+              <div id="sandbox-forced" class="notice notice-info hidden">
+                <svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg>
+                Ambiente <code id="sandbox-env"></code>: a trava fica <strong>sempre ativa</strong> fora de produção, independente do switch.
+              </div>
+
+              <h3 class="group-title">Regras de ativação e resposta</h3>
+              <div class="form-grid cols-3">
+                <label class="field span-2">
+                  <span>Palavras-chave de ativação</span>
+                  <input id="sandbox-triggers" placeholder="/lobo-sales-agent, /lobo">
+                  <small class="hint">Separe por vírgula. Quem enviar uma delas abre uma sessão de teste.</small>
+                </label>
+                <label class="field">
+                  <span>Sessão de teste (min)</span>
+                  <input id="sandbox-ttl" type="number" min="1" max="1440">
+                  <small class="hint">De 1 a 1440.</small>
+                </label>
+                <label class="field span-2">
+                  <span>Comandos de parada / reset</span>
+                  <input id="sandbox-stops" placeholder="/parar, /reset">
+                </label>
+                <label class="field">
+                  <span>Modelo de IA padrão</span>
+                  <select id="sandbox-llm-model">
+                    <option value="gemini-3.8-flash">Gemini 3.8 Flash (padrão, ultra-rápido)</option>
+                    <option value="gemini-2.5-pro">Gemini 2.5 Pro (raciocínio profundo)</option>
+                    <option value="gemini-3-pro">Gemini 3 Pro (negociação avançada)</option>
+                    <option value="gemini-4-argon">Gemini 4 Argon (máxima conversão)</option>
+                    <option value="gpt-4o">GPT-4o (fallback OpenAI Pro)</option>
+                    <option value="gpt-4o-mini">GPT-4o Mini (fallback OpenAI rápido)</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="row-between"><span>Silêncio do debounce</span><strong id="sandbox-silence-val" class="mono num-badge">8s</strong></span>
+                  <input id="sandbox-silence" type="range" min="2" max="30" step="1" value="8">
+                  <small class="hint">Espera após a última mensagem.</small>
+                </label>
+                <label class="field">
+                  <span class="row-between"><span>Janela máxima de coleta</span><strong id="sandbox-max-window-val" class="mono num-badge">20s</strong></span>
+                  <input id="sandbox-max-window" type="range" min="5" max="60" step="1" value="20">
+                  <small class="hint">Teto para fechar o lote.</small>
+                </label>
+                <div class="field field-action">
+                  <label class="check">
+                    <input type="checkbox" id="sandbox-split-messages" checked>
+                    <span>Envio humanizado em partes</span>
+                  </label>
+                  <button class="btn btn-primary" id="btn-save-sandbox" type="button"><svg class="ico" aria-hidden="true"><use href="#i-save"/></svg>Salvar regras</button>
+                </div>
+              </div>
+
+              <div class="divider"></div>
+              <h3><svg class="ico" aria-hidden="true"><use href="#i-smartphone"/></svg>Telefones autorizados (whitelist)</h3>
+              <p class="muted small">Esses números conversam com a IA livremente, sem precisar de palavra-chave.</p>
+              <form class="inline-form" id="form-phone">
+                <label class="sr-only" for="sandbox-phone">Telefone para liberar (DDI + DDD + número)</label>
+                <input id="sandbox-phone" inputmode="numeric" placeholder="5591988887777" autocomplete="off">
+                <button class="btn btn-success" type="submit"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg>Liberar número</button>
+              </form>
+              <div id="sandbox-phones" class="chips"></div>
+
+              <div class="divider"></div>
+              <div class="row-between">
+                <h3><svg class="ico" aria-hidden="true"><use href="#i-clock"/></svg>Sessões de teste ativas</h3>
+                <button class="btn btn-ghost btn-sm" id="btn-refresh-sandbox" type="button"><svg class="ico" aria-hidden="true"><use href="#i-refresh"/></svg>Atualizar</button>
+              </div>
+              <div id="sandbox-sessions" class="list"></div>
+            </article>
+
+            <article class="card">
+              <div class="card-head">
+                <h2><svg class="ico" aria-hidden="true"><use href="#i-plug"/></svg>Status das Integrações</h2>
+                <button class="btn btn-primary btn-sm" id="btn-test-all" type="button"><svg class="ico" aria-hidden="true"><use href="#i-zap"/></svg>Testar todas</button>
+              </div>
+              <div id="integrations" class="integrations"></div>
+            </article>
+          </div>
+        </section>
+
+        <!-- ================================================================ ABA 2 -->
+        <section id="tab-playground" class="pane" aria-labelledby="h-playground">
+          <header class="page-head">
+            <span class="page-head-icon"><svg class="ico" aria-hidden="true"><use href="#i-message"/></svg></span>
+            <div class="page-head-text">
+              <h1 id="h-playground">Playground ao Vivo</h1>
+              <p>Simule conversas de WhatsApp e inspecione cada turno do agente, sem afetar clientes reais.</p>
+            </div>
+          </header>
+          <div class="grid grid-playground">
+            <article class="card phone-card">
+              <div class="form-grid cols-4 compact">
+                <label class="field"><span>Cliente</span><select id="pg-tenant" class="tenant-select"></select></label>
+                <label class="field"><span>Motor</span>
+                  <select id="pg-engine">
+                    <option value="deterministic">Determinístico (offline)</option>
+                    <option value="gemini">Gemini (Live API)</option>
+                  </select>
+                </label>
+                <label class="field"><span>Nome do lead</span><input id="pg-name" value="Lead Playground"></label>
+                <label class="field"><span>Telefone</span><input id="pg-phone" value="5591900000001" inputmode="numeric"></label>
+              </div>
+              <div class="scenarios" role="group" aria-label="Cenários prontos">
+                <span class="scenarios-label">Cenários prontos</span>
+                <button class="btn btn-chip" data-scenario="mattress" type="button"><svg class="ico" aria-hidden="true"><use href="#i-messages"/></svg>3 mensagens (Colchão + Belém)</button>
+                <button class="btn btn-chip" data-scenario="booking" type="button"><svg class="ico" aria-hidden="true"><use href="#i-calendar"/></svg>Agendamento de visita</button>
+                <button class="btn btn-chip" data-scenario="discount" type="button"><svg class="ico" aria-hidden="true"><use href="#i-percent"/></svg>Desconto alto (handoff)</button>
+                <button class="btn btn-chip" data-scenario="emergency" type="button"><svg class="ico" aria-hidden="true"><use href="#i-alert"/></svg>Emergência CVV 188 (Vizzu)</button>
+              </div>
+              <div class="wa">
+                <div class="wa-head">
+                  <div class="wa-avatar" aria-hidden="true"><svg class="ico" aria-hidden="true"><use href="#i-bot"/></svg></div>
+                  <div><strong id="pg-chat-title">…</strong><small id="pg-chat-sub" class="muted">online</small></div>
+                  <button class="btn btn-ghost btn-sm wa-reset" id="btn-pg-reset" type="button" title="Limpar e resetar conversa"><svg class="ico" aria-hidden="true"><use href="#i-trash"/></svg>Limpar</button>
+                </div>
+                <div class="wa-body" id="pg-chat" aria-live="polite"></div>
+                <div class="debounce" id="pg-debounce">
+                  <svg class="ico" aria-hidden="true"><use href="#i-hourglass"/></svg>
+                  <div class="debounce-bar"><span id="pg-debounce-fill"></span></div>
+                  <small id="pg-debounce-label">Buffer de debounce</small>
+                  <button class="btn btn-sm btn-primary" id="btn-pg-flush" type="button">Enviar lote agora</button>
+                </div>
+                <form class="wa-compose" id="pg-form">
+                  <label class="sr-only" for="pg-input">Mensagem do lead</label>
+                  <input id="pg-input" placeholder="Digite como o lead… (envie várias seguidas!)" autocomplete="off">
+                  <button class="wa-send" type="submit" aria-label="Enviar"><svg class="ico" aria-hidden="true"><use href="#i-send"/></svg></button>
+                </form>
+                <div class="wa-options">
+                  <label class="check"><input type="checkbox" id="pg-immediate"> Lote imediato (sem debounce)</label>
+                  <label class="check">Silêncio <input id="pg-silence" type="number" min="1" max="30" step="0.5" value="4"> s</label>
+                </div>
+              </div>
+            </article>
+
+            <article class="card xray">
+              <div class="card-head"><h2><svg class="ico" aria-hidden="true"><use href="#i-activity"/></svg>Raio-X do Turno</h2><span id="xray-status" class="chip">aguardando</span></div>
+              <div id="xray" class="xray-body">
+                <div class="empty"><svg class="ico ico-lg" aria-hidden="true"><use href="#i-activity"/></svg>Envie mensagens no simulador para ver estágio do LangGraph, intenção do JEV, ferramentas executadas (argumentos + JSON) e atributos extraídos.</div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <!-- ================================================================ ABA 3 -->
+        <section id="tab-tenants" class="pane" aria-labelledby="h-tenants">
+          <header class="page-head">
+            <span class="page-head-icon"><svg class="ico" aria-hidden="true"><use href="#i-building"/></svg></span>
+            <div class="page-head-text">
+              <h1 id="h-tenants">Clientes &amp; Catálogo</h1>
+              <p>Plano, prompt (camadas 2 e 3), follow-up, catálogo, entregas e agenda de cada cliente.</p>
+            </div>
+          </header>
+          <div class="toolbar toolbar-card">
+            <label class="field inline"><span>Cliente</span><select id="tn-select" class="tenant-select"></select></label>
+            <button class="btn btn-success" id="btn-tn-new" type="button"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg>Novo cliente</button>
+            <button class="btn btn-ghost" id="btn-tn-reload" type="button"><svg class="ico" aria-hidden="true"><use href="#i-refresh"/></svg>Recarregar</button>
+            <span class="spacer"></span>
+            <label class="check"><input type="checkbox" id="tn-json-mode"> Editor JSON avançado</label>
+          </div>
+          <div id="tn-editor"></div>
+          <div class="savebar" id="tn-savebar">
+            <span id="tn-dirty" class="muted" role="status">Sem alterações pendentes</span>
+            <span class="spacer"></span>
+            <button class="btn btn-ghost" id="btn-tn-discard" type="button">Descartar</button>
+            <button class="btn btn-primary btn-lg" id="btn-tn-save" type="button"><svg class="ico" aria-hidden="true"><use href="#i-save"/></svg>Salvar e aplicar</button>
+          </div>
+        </section>
+
+        <!-- ================================================================ ABA 4 -->
+        <section id="tab-conversations" class="pane" aria-labelledby="h-conversations">
+          <header class="page-head">
+            <span class="page-head-icon"><svg class="ico" aria-hidden="true"><use href="#i-users"/></svg></span>
+            <div class="page-head-text">
+              <h1 id="h-conversations">Conversas &amp; Handoff</h1>
+              <p>Acompanhe conversas reais, pause ou reative a IA e resete memórias de contatos.</p>
+            </div>
+          </header>
+          <div class="toolbar toolbar-card">
+            <label class="field inline"><span>Cliente</span><select id="cv-tenant"><option value="">Todos</option></select></label>
+            <button class="btn btn-ghost" id="btn-cv-refresh" type="button"><svg class="ico" aria-hidden="true"><use href="#i-refresh"/></svg>Atualizar</button>
+            <label class="check"><input type="checkbox" id="cv-auto" checked> Atualizar a cada 10s</label>
+            <span class="spacer"></span>
+            <span id="cv-counter" class="muted small mono" role="status"></span>
+          </div>
+          <div id="cv-list" class="conversations"></div>
+        </section>
+
+        <!-- ================================================================ ABA 5 -->
+        <section id="tab-webhooks" class="pane" aria-labelledby="h-webhooks">
+          <header class="page-head">
+            <span class="page-head-icon"><svg class="ico" aria-hidden="true"><use href="#i-link"/></svg></span>
+            <div class="page-head-text">
+              <h1 id="h-webhooks">Webhooks &amp; Disparo</h1>
+              <p>URLs para configurar no WAHA/AstraCalls e teste de envio real pelo gateway.</p>
+            </div>
+          </header>
+          <div class="grid grid-webhooks">
+            <article class="card span-all">
+              <div class="card-head"><h2><svg class="ico" aria-hidden="true"><use href="#i-link"/></svg>URLs de Webhook</h2><small class="muted mono" id="wh-base"></small></div>
+              <div class="table-wrap"><table class="table" id="wh-table"></table></div>
+            </article>
+            <article class="card">
+              <div class="card-head"><h2><svg class="ico" aria-hidden="true"><use href="#i-smartphone"/></svg>Teste rápido no celular</h2></div>
+              <ol class="steps">
+                <li>Configure no WAHA/AstraCalls a URL do cliente acima (evento <code>message</code>; opcional <code>message.any</code> para detectar o atendente).</li>
+                <li>De qualquer celular, envie <code id="wh-trigger-example">/lobo-sales-agent Olá</code> para o número conectado — isso libera uma sessão de teste de <strong id="wh-ttl">30</strong> min só para aquele contato.</li>
+                <li>Ou libere seu número em <a href="#sandbox" data-goto-tab="sandbox">Segurança &amp; Conexões</a> (whitelist). Para recomeçar do zero, envie <code>/reset</code>.</li>
+              </ol>
+              <div class="notice notice-info"><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg>Mensagens normais de clientes reais são <strong>ignoradas em silêncio</strong> enquanto o Sandbox estiver ativo.</div>
+            </article>
+            <article class="card">
+              <div class="card-head"><h2><svg class="ico" aria-hidden="true"><use href="#i-send"/></svg>Testar envio via Gateway</h2></div>
+              <form id="form-send" class="form-grid cols-2">
+                <label class="field"><span>Cliente</span><select id="ts-tenant" class="tenant-select"></select></label>
+                <label class="field"><span>Provedor</span>
+                  <select id="ts-provider"><option value="waha">WAHA</option><option value="astracalls">AstraCalls</option></select>
+                </label>
+                <label class="field"><span>Sessão</span><input id="ts-session" placeholder="padrão do cliente"></label>
+                <label class="field"><span>Telefone de destino <span class="req" aria-hidden="true">*</span></span><input id="ts-phone" inputmode="numeric" placeholder="5591988887777" required></label>
+                <label class="field span-2"><span>Mensagem</span><textarea id="ts-text" rows="3" maxlength="1000">✅ Teste de envio do painel Lobo AI Sales Agent.</textarea><small class="hint">Máximo de 1000 caracteres. A mensagem é enviada de verdade.</small></label>
+                <div class="field span-2 row-between form-foot">
+                  <span id="ts-result" class="muted small" role="status"></span>
+                  <button class="btn btn-primary" type="submit"><svg class="ico" aria-hidden="true"><use href="#i-send"/></svg>Enviar mensagem real</button>
+                </div>
+              </form>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
   </div>
 
-  <nav class="tabs" role="tablist">
-    <button class="tab active" data-tab="sandbox" role="tab">🛡️ <span>Segurança &amp; Conexões</span></button>
-    <button class="tab" data-tab="engine" role="tab">🧠 <span>Motor do Agente</span></button>
-    <button class="tab" data-tab="playground" role="tab">💬 <span>Playground ao Vivo</span></button>
-    <button class="tab" data-tab="tenants" role="tab">🏢 <span>Clientes &amp; Catálogo</span></button>
-    <button class="tab" data-tab="conversations" role="tab">🤝 <span>Conversas &amp; Handoff</span></button>
-    <button class="tab" data-tab="webhooks" role="tab">🔗 <span>Webhooks &amp; Disparo</span></button>
-  </nav>
-
-  <main>
-    <!-- ================================================================ MOTOR GLOBAL DO AGENTE -->
-    <section id="tab-engine" class="pane">
-      <div class="grid grid-engine">
-        <article class="card">
-          <div class="card-head">
-            <h2>🔒 Kernel global do agente (Camada 1)</h2>
-            <span class="chip chip-lock" id="kn-meta">somente leitura</span>
-          </div>
-          <p class="muted small">Regras que valem para <strong>todos os clientes</strong>: identidade humana, uso
-            correto das ferramentas e anti-alucinação. Ficam no código (versionadas) e não dependem de nenhum cliente. O
-            playbook do segmento (Camada 2) e as instruções da empresa (Camada 3) são editados dentro de cada cliente.
-          </p>
-          <div class="chips" id="kn-blocks"></div>
-          <pre id="kn-text" class="prompt-pre prompt-pre-tall">Carregando…</pre>
-        </article>
-        <article class="card">
-          <div class="card-head">
-            <h2>⏰ Régua de follow-up automática</h2>
-            <span class="chip" id="fu-sched-chip">…</span>
-          </div>
-          <div id="fu-sched-body" class="small"></div>
-          <div class="divider"></div>
-          <div class="row-between">
-            <h3>Próximos toques</h3><button class="btn btn-sm" id="fu-sched-refresh">↻ Atualizar</button>
-          </div>
-          <div id="fu-queue" class="list"></div>
-        </article>
-      </div>
-    </section>
-    <!-- ================================================================ ABA 1 -->
-    <section id="tab-sandbox" class="pane active">
-      <div class="grid grid-sandbox">
-        <article class="card card-hero">
-          <div class="card-head">
-            <h2>Trava de Segurança Sandbox</h2>
-            <span id="sandbox-state-chip" class="chip">…</span>
-          </div>
-          <label class="big-switch" id="sandbox-switch-wrap">
-            <input type="checkbox" id="sandbox-enabled">
-            <span class="track"><span class="thumb"></span></span>
-            <span class="big-switch-label">
-              <strong id="sandbox-switch-title">…</strong>
-              <small id="sandbox-switch-sub" class="muted">…</small>
-            </span>
-          </label>
-          <div id="sandbox-forced" class="notice notice-info hidden">
-            🔒 Ambiente <code id="sandbox-env"></code>: a trava fica <strong>sempre ativa</strong> fora de produção,
-            independente do switch.
-          </div>
-
-          <div class="form-grid cols-3">
-            <label class="field span-2">
-              <span>Palavras-chave de ativação</span>
-              <input id="sandbox-triggers" placeholder="/lobo-sales-agent, /lobo">
-            </label>
-            <label class="field">
-              <span>Sessão de teste (min)</span>
-              <input id="sandbox-ttl" type="number" min="1" max="1440">
-            </label>
-            <label class="field span-2">
-              <span>Comandos de parada / reset</span>
-              <input id="sandbox-stops" placeholder="/parar, /reset">
-            </label>
-            <label class="field">
-              <span>Modelo de IA Padrão (Flash vs. Pro)</span>
-              <select id="sandbox-llm-model">
-                <option value="gemini-3.8-flash">⚡ Gemini 3.8 Flash (Padrão: ultra-rápido)</option>
-                <option value="gemini-2.5-pro">🧠 Gemini 2.5 Pro (Raciocínio profundo)</option>
-                <option value="gemini-3-pro">🧠 Gemini 3 Pro (Negociação avançada)</option>
-                <option value="gemini-4-argon">🚀 Gemini 4 Argon (Máxima conversão)</option>
-                <option value="gpt-4o">🤖 GPT-4o (Fallback OpenAI Pro)</option>
-                <option value="gpt-4o-mini">⚡ GPT-4o Mini (Fallback OpenAI Rápido)</option>
-              </select>
-            </label>
-            <label class="field">
-              <span class="row-between"><span>Tempo de Silêncio do Debounce</span><strong id="sandbox-silence-val"
-                  class="mono">8s</strong></span>
-              <input id="sandbox-silence" type="range" min="2" max="30" step="1" value="8">
-            </label>
-            <label class="field">
-              <span class="row-between"><span>Janela Máxima de Coleta</span><strong id="sandbox-max-window-val"
-                  class="mono">20s</strong></span>
-              <input id="sandbox-max-window" type="range" min="5" max="60" step="1" value="20">
-            </label>
-            <div class="field field-action">
-              <label class="check" style="margin-bottom:6px">
-                <input type="checkbox" id="sandbox-split-messages" checked>
-                <span>Ativar Envio Humanizado em Partes</span>
-              </label>
-              <button class="btn btn-primary" id="btn-save-sandbox">💾 Salvar regras</button>
-            </div>
-          </div>
-
-          <div class="divider"></div>
-          <h3>📱 Telefones autorizados (whitelist)</h3>
-          <p class="muted small">Esses números conversam com a IA livremente, sem precisar de palavra-chave.</p>
-          <form class="inline-form" id="form-phone">
-            <input id="sandbox-phone" inputmode="numeric" placeholder="5591988887777" autocomplete="off">
-            <button class="btn btn-success" type="submit">+ Liberar Meu Número</button>
-          </form>
-          <div id="sandbox-phones" class="chips"></div>
-
-          <div class="divider"></div>
-          <div class="row-between">
-            <h3>⏱️ Sessões de teste ativas</h3>
-            <button class="btn btn-ghost btn-sm" id="btn-refresh-sandbox">↻ Atualizar</button>
-          </div>
-          <div id="sandbox-sessions" class="list"></div>
-        </article>
-
-        <article class="card">
-          <div class="card-head">
-            <h2>Status das Integrações</h2>
-            <button class="btn btn-primary btn-sm" id="btn-test-all">⚡ Testar Todas</button>
-          </div>
-          <div id="integrations" class="integrations"></div>
-        </article>
-      </div>
-    </section>
-
-    <!-- ================================================================ ABA 2 -->
-    <section id="tab-playground" class="pane">
-      <div class="grid grid-playground">
-        <article class="card phone-card">
-          <div class="form-grid cols-4 compact">
-            <label class="field"><span>Cliente</span><select id="pg-tenant" class="tenant-select"></select></label>
-            <label class="field"><span>Motor</span>
-              <select id="pg-engine">
-                <option value="deterministic">⚡ Determinístico (offline)</option>
-                <option value="gemini">✨ Gemini (Live API)</option>
-              </select>
-            </label>
-            <label class="field"><span>Nome do lead</span><input id="pg-name" value="Lead Playground"></label>
-            <label class="field"><span>Telefone</span><input id="pg-phone" value="5591900000001"
-                inputmode="numeric"></label>
-          </div>
-          <div class="scenarios">
-            <button class="btn btn-chip" data-scenario="mattress">🛏️ 3 Mensagens (Colchão + Belém)</button>
-            <button class="btn btn-chip" data-scenario="booking">📅 Agendamento de Visita</button>
-            <button class="btn btn-chip" data-scenario="discount">💸 Desconto Alto (Handoff)</button>
-            <button class="btn btn-chip" data-scenario="emergency">🚨 Emergência CVV 188 (Vizzu)</button>
-          </div>
-          <div class="wa">
-            <div class="wa-head">
-              <div class="wa-avatar">🐺</div>
-              <div><strong id="pg-chat-title">…</strong><small id="pg-chat-sub" class="muted">online</small></div>
-              <button class="btn btn-ghost btn-sm wa-reset" id="btn-pg-reset" title="Limpar e resetar conversa">🗑️
-                Limpar</button>
-            </div>
-            <div class="wa-body" id="pg-chat"></div>
-            <div class="debounce" id="pg-debounce">
-              <div class="debounce-bar"><span id="pg-debounce-fill"></span></div>
-              <small id="pg-debounce-label">⏳ Buffer de debounce</small>
-              <button class="btn btn-sm btn-primary" id="btn-pg-flush">Enviar lote agora</button>
-            </div>
-            <form class="wa-compose" id="pg-form">
-              <input id="pg-input" placeholder="Digite como o lead… (envie várias seguidas!)" autocomplete="off">
-              <button class="wa-send" type="submit" aria-label="Enviar">➤</button>
-            </form>
-            <div class="wa-options">
-              <label class="check"><input type="checkbox" id="pg-immediate"> Lote imediato (sem debounce)</label>
-              <label class="check">Silêncio <input id="pg-silence" type="number" min="1" max="30" step="0.5" value="4">
-                s</label>
-            </div>
-          </div>
-        </article>
-
-        <article class="card xray">
-          <div class="card-head">
-            <h2>🩻 Raio-X do Turno</h2><span id="xray-status" class="chip">aguardando</span>
-          </div>
-          <div id="xray" class="xray-body">
-            <div class="empty">Envie mensagens no simulador para ver estágio do LangGraph, intenção do JEV, ferramentas
-              executadas (argumentos + JSON) e atributos extraídos.</div>
-          </div>
-        </article>
-      </div>
-    </section>
-
-    <!-- ================================================================ ABA 3 -->
-    <section id="tab-tenants" class="pane">
-      <div class="toolbar">
-        <label class="field inline"><span>Cliente</span><select id="tn-select" class="tenant-select"></select></label>
-        <button class="btn btn-success" id="btn-tn-new">+ Criar Novo Cliente</button>
-        <button class="btn btn-ghost" id="btn-tn-reload">↻ Recarregar</button>
-        <span class="spacer"></span>
-        <label class="check"><input type="checkbox" id="tn-json-mode"> Editor JSON avançado</label>
-      </div>
-      <div id="tn-editor"></div>
-      <div class="savebar" id="tn-savebar">
-        <span id="tn-dirty" class="muted">Sem alterações pendentes</span>
-        <span class="spacer"></span>
-        <button class="btn btn-ghost" id="btn-tn-discard">Descartar</button>
-        <button class="btn btn-primary btn-lg" id="btn-tn-save">💾 Salvar e Aplicar Imediatamente</button>
-      </div>
-    </section>
-
-    <!-- ================================================================ ABA 4 -->
-    <section id="tab-conversations" class="pane">
-      <div class="toolbar">
-        <label class="field inline"><span>Cliente</span><select id="cv-tenant">
-            <option value="">Todos</option>
-          </select></label>
-        <button class="btn btn-ghost" id="btn-cv-refresh">↻ Atualizar</button>
-        <label class="check"><input type="checkbox" id="cv-auto" checked> Atualizar a cada 10s</label>
-        <span class="spacer"></span>
-        <span id="cv-counter" class="muted small"></span>
-      </div>
-      <div id="cv-list" class="conversations"></div>
-    </section>
-
-    <!-- ================================================================ ABA 5 -->
-    <section id="tab-webhooks" class="pane">
-      <div class="grid grid-webhooks">
-        <article class="card span-all">
-          <div class="card-head">
-            <h2>URLs de Webhook</h2><small class="muted" id="wh-base"></small>
-          </div>
-          <div class="table-wrap">
-            <table class="table" id="wh-table"></table>
-          </div>
-        </article>
-        <article class="card">
-          <h2>📲 Teste rápido no celular</h2>
-          <ol class="steps">
-            <li>Configure no WAHA/AstraCalls a URL do cliente acima (evento <code>message</code>; opcional
-              <code>message.any</code> para detectar o atendente).</li>
-            <li>De qualquer celular, envie <code id="wh-trigger-example">/lobo-sales-agent Olá</code> para o número
-              conectado — isso libera uma sessão de teste de <strong id="wh-ttl">30</strong> min só para aquele contato.
-            </li>
-            <li>Ou libere seu número na Aba 🛡️ (whitelist). Para recomeçar do zero, envie <code>/reset</code>.</li>
-          </ol>
-          <div class="notice notice-info">🔒 Mensagens normais de clientes reais são <strong>ignoradas em
-              silêncio</strong> enquanto o Sandbox estiver ativo.</div>
-        </article>
-        <article class="card">
-          <h2>🚀 Testar envio via Gateway</h2>
-          <form id="form-send" class="form-grid cols-2">
-            <label class="field"><span>Cliente</span><select id="ts-tenant" class="tenant-select"></select></label>
-            <label class="field"><span>Provedor</span>
-              <select id="ts-provider">
-                <option value="waha">WAHA</option>
-                <option value="astracalls">AstraCalls</option>
-              </select>
-            </label>
-            <label class="field"><span>Sessão</span><input id="ts-session" placeholder="padrão do cliente"></label>
-            <label class="field"><span>Telefone de destino</span><input id="ts-phone" inputmode="numeric"
-                placeholder="5591988887777" required></label>
-            <label class="field span-2"><span>Mensagem</span><textarea id="ts-text" rows="3"
-                maxlength="1000">✅ Teste de envio do painel Lobo AI Sales Agent.</textarea></label>
-            <div class="field span-2 row-between">
-              <span id="ts-result" class="muted small"></span>
-              <button class="btn btn-primary" type="submit">Enviar mensagem real</button>
-            </div>
-          </form>
-        </article>
-      </div>
-    </section>
-  </main>
-
   <!-- Modal: item do catálogo -->
-  <dialog id="dlg-item" class="modal">
+  <dialog id="dlg-item" class="modal" aria-labelledby="dlg-item-title">
     <form method="dialog" id="form-item" class="modal-body">
-      <div class="card-head">
-        <h2 id="dlg-item-title">Produto / Serviço</h2><button class="icon-btn" value="cancel" formnovalidate
-          aria-label="Fechar">✕</button>
-      </div>
-      <div class="form-grid cols-3">
-        <label class="field"><span>Código (item_id)</span><input name="item_id" required maxlength="64"></label>
-        <label class="field span-2"><span>Nome</span><input name="name" required></label>
-        <label class="field"><span>Categoria</span><input name="category" required
-            placeholder="colchao, servico…"></label>
-        <label class="field span-2"><span>Tags (separadas por vírgula)</span><input name="tags"></label>
-        <label class="field span-3"><span>Descrição</span><textarea name="description" rows="2"></textarea></label>
-        <label class="field span-3"><span>Atributos (um por linha: chave: valor)</span><textarea name="attributes"
-            rows="3" placeholder="tamanho: casal&#10;medidas: 138x188x30 cm"></textarea></label>
-        <label class="field"><span>Preço (R$)</span><input name="amount" inputmode="decimal"
-            placeholder="2899,00"></label>
-        <label class="field"><span>Máx. parcelas</span><input name="max_installments" type="number" min="1" max="24"
-            value="1"></label>
-        <label class="field"><span>% desconto à vista</span><input name="cash_pct" inputmode="decimal"
-            placeholder="5"></label>
-        <label class="field"><span>Preço à vista (R$)</span><input name="cash_amount" inputmode="decimal"
-            placeholder="calculado"></label>
-        <label class="field span-2"><span>Observação do preço</span><input name="note"
-            placeholder="ex.: instalação não inclusa"></label>
-        <label class="check"><input type="checkbox" name="on_request"> Preço sob consulta (IA transfere para
-          humano)</label>
-        <label class="check"><input type="checkbox" name="interest_free" checked> Parcelas sem juros</label>
-        <label class="check"><input type="checkbox" name="in_stock" checked> Em estoque</label>
-        <label class="check"><input type="checkbox" name="active" checked> Ativo no catálogo</label>
-        <label class="field span-3"><span>Variantes (JSON avançado, opcional)</span><textarea name="variants" rows="3"
-            class="mono" placeholder="[]"></textarea></label>
-      </div>
+      <div class="card-head modal-head"><h2 id="dlg-item-title">Produto / Serviço</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Fechar"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button></div>
+      <fieldset class="fieldset">
+        <legend>Identificação</legend>
+        <div class="form-grid cols-3">
+          <label class="field"><span>Código (item_id) <span class="req" aria-hidden="true">*</span></span><input name="item_id" required maxlength="64"></label>
+          <label class="field span-2"><span>Nome <span class="req" aria-hidden="true">*</span></span><input name="name" required></label>
+          <label class="field"><span>Categoria <span class="req" aria-hidden="true">*</span></span><input name="category" required placeholder="colchao, servico…"></label>
+          <label class="field span-2"><span>Tags</span><input name="tags"><small class="hint">Separadas por vírgula.</small></label>
+          <label class="field span-3"><span>Descrição</span><textarea name="description" rows="2"></textarea></label>
+          <label class="field span-3"><span>Atributos</span><textarea name="attributes" rows="3" placeholder="tamanho: casal&#10;medidas: 138x188x30 cm"></textarea><small class="hint">Um por linha, no formato <code>chave: valor</code>.</small></label>
+        </div>
+      </fieldset>
+      <fieldset class="fieldset">
+        <legend>Preço e condições</legend>
+        <div class="form-grid cols-3">
+          <label class="field"><span>Preço (R$)</span><input name="amount" inputmode="decimal" placeholder="2899,00" class="num"></label>
+          <label class="field"><span>Máx. parcelas</span><input name="max_installments" type="number" min="1" max="24" value="1" class="num"></label>
+          <label class="field"><span>% desconto à vista</span><input name="cash_pct" inputmode="decimal" placeholder="5" class="num"></label>
+          <label class="field"><span>Preço à vista (R$)</span><input name="cash_amount" inputmode="decimal" placeholder="calculado" class="num"><small class="hint">Calculado a partir do % (ou vice-versa).</small></label>
+          <label class="field span-2"><span>Observação do preço</span><input name="note" placeholder="ex.: instalação não inclusa"></label>
+        </div>
+        <div class="check-grid">
+          <label class="check"><input type="checkbox" name="on_request"> Preço sob consulta (IA transfere para humano)</label>
+          <label class="check"><input type="checkbox" name="interest_free" checked> Parcelas sem juros</label>
+          <label class="check"><input type="checkbox" name="in_stock" checked> Em estoque</label>
+          <label class="check"><input type="checkbox" name="active" checked> Ativo no catálogo</label>
+        </div>
+      </fieldset>
+      <fieldset class="fieldset">
+        <legend>Avançado</legend>
+        <label class="field"><span>Variantes (JSON, opcional)</span><textarea name="variants" rows="3" class="mono" placeholder="[]"></textarea><small class="hint">Lista JSON, ex.: <code>[]</code>.</small></label>
+      </fieldset>
       <div class="modal-actions">
         <button class="btn btn-ghost" value="cancel" formnovalidate>Cancelar</button>
-        <button class="btn btn-primary" value="save" id="btn-item-save">💾 Salvar item e aplicar</button>
+        <button class="btn btn-primary" value="save" id="btn-item-save"><svg class="ico" aria-hidden="true"><use href="#i-save"/></svg>Salvar item e aplicar</button>
       </div>
     </form>
   </dialog>
 
   <!-- Modal: novo cliente -->
-  <dialog id="dlg-new" class="modal modal-sm">
+  <dialog id="dlg-new" class="modal modal-sm" aria-labelledby="dlg-new-title">
     <form method="dialog" id="form-new" class="modal-body">
-      <div class="card-head">
-        <h2>Novo Cliente</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Fechar">✕</button>
-      </div>
+      <div class="card-head modal-head"><h2 id="dlg-new-title">Novo cliente</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Fechar"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button></div>
       <div class="form-grid cols-2">
-        <label class="field span-2"><span>Identificador (tenant_id)</span><input name="tenant_id" required
-            pattern="[a-z0-9][a-z0-9_\-]{1,63}" placeholder="minha-loja"></label>
-        <label class="field span-2"><span>Nome de exibição</span><input name="display_name" required></label>
+        <label class="field span-2"><span>Identificador (tenant_id) <span class="req" aria-hidden="true">*</span></span><input name="tenant_id" required pattern="[a-z0-9][a-z0-9_\-]{1,63}" placeholder="minha-loja"><small class="hint">Minúsculas, números, hífen ou _ (2 a 64 caracteres).</small></label>
+        <label class="field span-2"><span>Nome de exibição <span class="req" aria-hidden="true">*</span></span><input name="display_name" required></label>
         <label class="field"><span>Segmento / Categoria</span>
           <select name="segment">
             <option value="generic">Genérico / B2B / Serviços</option>
@@ -396,91 +490,76 @@
             <option value="enterprise">Escala Enterprise (R$ 2.990/mês · até 6.000 conv.)</option>
           </select>
         </label>
-        <label class="field"><span>Nicho / Especialidade (opcional)</span><input name="niche_name"
-            placeholder="ex.: Energia Solar, Móveis Planejados"></label>
+        <label class="field"><span>Nicho / Especialidade (opcional)</span><input name="niche_name" placeholder="ex.: Energia Solar, Móveis Planejados"></label>
         <label class="field"><span>Fuso horário</span><input name="timezone" value="America/Belem"></label>
       </div>
       <div class="modal-actions">
         <button class="btn btn-ghost" value="cancel" formnovalidate>Cancelar</button>
-        <button class="btn btn-success" value="save">Criar cliente</button>
+        <button class="btn btn-success" value="save"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg>Criar cliente</button>
       </div>
     </form>
   </dialog>
 
   <!-- Modal: editor do System Prompt (camadas) -->
-  <dialog id="dlg-prompt" class="modal modal-xl">
+  <dialog id="dlg-prompt" class="modal modal-xl" aria-labelledby="dlg-prompt-title">
     <div class="modal-body">
-      <div class="card-head">
-        <h2>🧠 System Prompt do Agente <small class="muted" id="pr-tenant-label"></small></h2>
-        <button class="icon-btn" id="pr-close" aria-label="Fechar">✕</button>
+      <div class="card-head modal-head">
+        <h2 id="dlg-prompt-title"><svg class="ico" aria-hidden="true"><use href="#i-file-text"/></svg>System Prompt do Agente <small class="muted" id="pr-tenant-label"></small></h2>
+        <button class="icon-btn" id="pr-close" type="button" aria-label="Fechar"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
       </div>
       <div class="layer-legend">
-        <span class="chip chip-info">✏️ Camada 2 · Playbook do segmento</span>
-        <span class="chip chip-ok">✏️ Camada 3 · DNA exclusivo da empresa</span>
+        <span class="chip chip-info"><svg class="ico" aria-hidden="true"><use href="#i-pencil"/></svg>Camada 2 · Playbook do segmento</span>
+        <span class="chip chip-ok"><svg class="ico" aria-hidden="true"><use href="#i-pencil"/></svg>Camada 3 · DNA exclusivo da empresa</span>
         <span class="chip chip-lock">As regras globais (Kernel) ficam na aba “Motor do Agente”</span>
       </div>
-      <div class="subtabs" role="tablist">
-        <button class="subtab active" data-prtab="l2">Camada 2 · Playbook</button>
-        <button class="subtab" data-prtab="l3">Camada 3 · Instruções da empresa</button>
-        <button class="subtab" data-prtab="compiled">👁 Prompt final compilado</button>
-        <button class="subtab" data-prtab="history">🕘 Versões</button>
+      <div class="subtabs" role="group" aria-label="Partes do prompt">
+        <button class="subtab active" data-prtab="l2" type="button">Camada 2 · Playbook</button>
+        <button class="subtab" data-prtab="l3" type="button">Camada 3 · Instruções da empresa</button>
+        <button class="subtab" data-prtab="compiled" type="button"><svg class="ico" aria-hidden="true"><use href="#i-eye"/></svg>Prompt final compilado</button>
+        <button class="subtab" data-prtab="history" type="button"><svg class="ico" aria-hidden="true"><use href="#i-history"/></svg>Versões</button>
       </div>
 
       <section class="prpane active" data-prpane="l2">
-        <label class="check"><input type="checkbox" id="pr-l2-custom"> Usar playbook personalizado para este cliente
-          (substitui o padrão do segmento só aqui)</label>
+        <label class="check"><input type="checkbox" id="pr-l2-custom"> Usar playbook personalizado para este cliente (substitui o padrão do segmento só aqui)</label>
         <p class="muted small" id="pr-l2-hint"></p>
+        <label class="sr-only" for="pr-l2">Camada 2 · Playbook</label>
         <textarea id="pr-l2" class="mono prompt-area" rows="16" spellcheck="false"></textarea>
-        <div class="row-between small"><span class="muted">Use <code>{display_name}</code> para o nome do cliente. Tags
-            estruturais do Kernel são removidas automaticamente.</span><span id="pr-l2-count" class="mono muted"></span>
-        </div>
-        <div class="toolbar"><button class="btn btn-sm" id="pr-l2-copy">⤵ Copiar o padrão do segmento para
-            editar</button></div>
+        <div class="row-between small area-foot"><span class="muted">Use <code>{display_name}</code> para o nome do cliente. Tags estruturais do Kernel são removidas automaticamente.</span><span id="pr-l2-count" class="mono muted"></span></div>
+        <div class="toolbar"><button class="btn btn-sm" id="pr-l2-copy" type="button"><svg class="ico" aria-hidden="true"><use href="#i-copy-down"/></svg>Copiar o padrão do segmento para editar</button></div>
       </section>
 
       <section class="prpane" data-prpane="l3">
-        <p class="muted small">Regras e particularidades desta empresa: endereço/referências, região atendida, tom
-          regional, diferenciais, perguntas obrigatórias. Não coloque preços, prazos ou fretes aqui: eles vêm sempre do
-          catálogo e das ferramentas.</p>
-        <textarea id="pr-l3" class="mono prompt-area" rows="16" spellcheck="false"
-          placeholder="- Loja física na Av. ..., bairro ...&#10;- Atendemos a cidade X e região&#10;- Sempre pergunte se ..."></textarea>
-        <div class="row-between small"><span class="muted">Em conflito com o Kernel, o Kernel prevalece.</span><span
-            id="pr-l3-count" class="mono muted"></span></div>
+        <p class="muted small">Regras e particularidades desta empresa: endereço/referências, região atendida, tom regional, diferenciais, perguntas obrigatórias. Não coloque preços, prazos ou fretes aqui: eles vêm sempre do catálogo e das ferramentas.</p>
+        <label class="sr-only" for="pr-l3">Camada 3 · Instruções da empresa</label>
+        <textarea id="pr-l3" class="mono prompt-area" rows="16" spellcheck="false" placeholder="- Loja física na Av. ..., bairro ...&#10;- Atendemos a cidade X e região&#10;- Sempre pergunte se ..."></textarea>
+        <div class="row-between small area-foot"><span class="muted">Em conflito com o Kernel, o Kernel prevalece.</span><span id="pr-l3-count" class="mono muted"></span></div>
       </section>
 
       <section class="prpane" data-prpane="compiled">
-        <div class="row-between"><span class="muted small">Texto final que o modelo recebe (regras globais + camadas
-            deste cliente), com um lead fictício. <span id="pr-compiled-meta" class="mono"></span></span><button
-            class="btn btn-sm" id="pr-preview">↻ Atualizar com o rascunho</button></div>
+        <div class="row-between"><span class="muted small">Texto final que o modelo recebe (regras globais + camadas deste cliente), com um lead fictício. <span id="pr-compiled-meta" class="mono"></span></span><button class="btn btn-sm" id="pr-preview" type="button"><svg class="ico" aria-hidden="true"><use href="#i-refresh"/></svg>Atualizar com o rascunho</button></div>
         <pre id="pr-compiled" class="prompt-pre"></pre>
       </section>
 
       <section class="prpane" data-prpane="history">
-        <p class="muted small">A cada gravação, a versão anterior das Camadas 2 e 3 é guardada (últimas 30). Carregar
-          uma versão só preenche o editor; nada é gravado até você salvar.</p>
+        <p class="muted small">A cada gravação, a versão anterior das Camadas 2 e 3 é guardada (últimas 30). Carregar uma versão só preenche o editor; nada é gravado até você salvar.</p>
         <div id="pr-history" class="list"></div>
       </section>
 
       <div class="modal-actions">
-        <span id="pr-dirty" class="muted small spacer"></span>
-        <button class="btn btn-ghost" id="pr-cancel">Fechar</button>
-        <button class="btn btn-primary" id="pr-save">💾 Salvar alterações…</button>
+        <span id="pr-dirty" class="muted small spacer" role="status"></span>
+        <button class="btn btn-ghost" id="pr-cancel" type="button">Fechar</button>
+        <button class="btn btn-primary" id="pr-save" type="button"><svg class="ico" aria-hidden="true"><use href="#i-save"/></svg>Salvar alterações…</button>
       </div>
     </div>
   </dialog>
 
   <!-- Modal: confirmação de alteração do prompt -->
-  <dialog id="dlg-prompt-confirm" class="modal modal-sm">
+  <dialog id="dlg-prompt-confirm" class="modal modal-sm" aria-labelledby="dlg-prc-title">
     <form method="dialog" id="form-prompt-confirm" class="modal-body">
-      <div class="card-head">
-        <h2>⚠️ Confirmar alteração do prompt</h2><button class="icon-btn" value="cancel" formnovalidate
-          aria-label="Fechar">✕</button>
-      </div>
-      <p class="small">A mudança vale <strong>imediatamente</strong> para todas as conversas reais deste cliente. A
-        versão atual fica salva no histórico.</p>
+      <div class="card-head modal-head"><h2 id="dlg-prc-title"><svg class="ico ico-warn" aria-hidden="true"><use href="#i-alert"/></svg>Confirmar alteração do prompt</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Fechar"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button></div>
+      <p class="small">A mudança vale <strong>imediatamente</strong> para todas as conversas reais deste cliente. A versão atual fica salva no histórico.</p>
       <ul id="prc-summary" class="small prc-summary"></ul>
-      <label class="field"><span>Digite <code id="prc-expected"></code> para confirmar</span><input name="confirm"
-          id="prc-input" autocomplete="off" spellcheck="false"></label>
+      <label class="field"><span>Digite <code id="prc-expected"></code> para confirmar</span><input name="confirm" id="prc-input" autocomplete="off" spellcheck="false"></label>
       <div class="modal-actions">
         <button class="btn btn-ghost" value="cancel" formnovalidate>Cancelar</button>
         <button class="btn btn-danger" value="confirm" id="prc-ok" disabled>Aplicar no agente</button>
@@ -489,15 +568,11 @@
   </dialog>
 
   <!-- Modal: token -->
-  <dialog id="dlg-auth" class="modal modal-sm">
+  <dialog id="dlg-auth" class="modal modal-sm" aria-labelledby="dlg-auth-title">
     <form method="dialog" id="form-auth" class="modal-body">
-      <div class="card-head">
-        <h2>🔑 Token de administrador</h2><button class="icon-btn" value="cancel" formnovalidate
-          aria-label="Fechar">✕</button>
-      </div>
+      <div class="card-head modal-head"><h2 id="dlg-auth-title"><svg class="ico" aria-hidden="true"><use href="#i-key"/></svg>Token de administrador</h2><button class="icon-btn" value="cancel" formnovalidate aria-label="Fechar"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button></div>
       <p class="muted small">Informe o valor de <code>ADMIN_TOKEN</code>. Ele fica salvo apenas neste navegador.</p>
-      <label class="field"><span>Token</span><input name="token" type="password"
-          autocomplete="current-password"></label>
+      <label class="field"><span>Token</span><input name="token" type="password" autocomplete="current-password"></label>
       <div class="modal-actions">
         <button class="btn btn-ghost" value="clear" formnovalidate>Esquecer token</button>
         <button class="btn btn-primary" value="save">Salvar</button>
@@ -506,7 +581,6 @@
   </dialog>
 
   <div id="toasts" class="toasts" aria-live="polite"></div>
-  <script src="/static/admin/app.js?v=0.7.0" defer></script>
+  <script src="/static/admin/app.js?v=0.8.0" defer></script>
 </body>
-
 </html>
